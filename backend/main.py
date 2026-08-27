@@ -10,13 +10,15 @@ from backend.database import (
 )
 from backend.risk_engine import calculate_risk
 from backend.schemas import (
+    AdversarialBattleRequest,
+    AdversarialBattleResponse,
     DetectionRequest,
     DetectionResponse,
     SimulationRequest,
     SimulationResponse,
     Transaction,
 )
-
+from backend.llm_service import llm_service
 
 
 @asynccontextmanager
@@ -117,3 +119,55 @@ def simulate_transactions(request: SimulationRequest):
         transactions.append(transaction)
 
     return SimulationResponse(transactions=transactions)
+@app.post(
+    "/api/adversarial-battle",
+    response_model=AdversarialBattleResponse,
+)
+def adversarial_battle(request: AdversarialBattleRequest):
+    transaction = Transaction(
+        txn_id="BATTLE-BASE-001",
+        user_id="USER-BATTLE",
+        amount=50000,
+        currency="INR",
+        merchant_id="MERCHANT-BATTLE",
+        device_id="DEVICE-BATTLE",
+        ip_address="192.168.1.100",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        country="IN",
+        velocity_1h=2,
+        device_risk=0.2,
+        ip_risk=0.2,
+        country_risk=0.1,
+    )
+
+    scenarios = llm_service.generate_attack_scenarios(
+        transaction.model_dump(),
+        request.rounds,
+    )
+
+    results = []
+
+    for scenario in scenarios:
+        modified_transaction = transaction.model_copy(
+            update={
+                "amount": scenario["modified_amount"],
+                "velocity_1h": scenario["modified_velocity_1h"],
+            }
+        )
+
+        detection = calculate_risk(modified_transaction)
+
+        results.append(
+            {
+                "scenario_id": scenario["scenario_id"],
+                "attack_type": scenario["type"],
+                "description": scenario["description"],
+                "risk_score": detection["risk_score"],
+                "decision": detection["decision"],
+            }
+        )
+
+    return AdversarialBattleResponse(
+        rounds_completed=len(results),
+        results=results,
+    )
