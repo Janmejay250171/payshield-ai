@@ -1,5 +1,6 @@
+import random
 from contextlib import asynccontextmanager
-
+from datetime import datetime, timezone
 from fastapi import FastAPI
 
 from backend.database import (
@@ -11,7 +12,11 @@ from backend.risk_engine import calculate_risk
 from backend.schemas import (
     DetectionRequest,
     DetectionResponse,
+    SimulationRequest,
+    SimulationResponse,
+    Transaction,
 )
+
 
 
 @asynccontextmanager
@@ -73,3 +78,29 @@ def detect_transaction(request: DetectionRequest):
 @app.get("/api/metrics")
 def metrics():
     return get_transaction_metrics()
+
+
+@app.post("/api/simulate", response_model=SimulationResponse)
+def simulate_transactions(request: SimulationRequest):
+    transactions = []
+
+    for index in range(request.count):
+        transaction = Transaction(
+            txn_id=f"SIM-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{index}",
+            user_id=f"USER-{random.randint(1, 100)}",
+            amount=round(random.uniform(100, 100000), 2),
+            currency="INR",
+            merchant_id=f"MERCHANT-{random.randint(1, 50)}",
+            device_id=f"DEVICE-{random.randint(1, 100)}",
+            ip_address=f"192.168.1.{random.randint(1, 254)}",
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            country="IN",
+            velocity_1h=random.randint(0, 10),
+            device_risk=round(random.random(), 2),
+            ip_risk=round(random.random(), 2),
+            country_risk=round(random.random(), 2),
+        )
+
+        transactions.append(transaction)
+
+    return SimulationResponse(transactions=transactions)
