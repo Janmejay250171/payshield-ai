@@ -81,6 +81,7 @@ def metrics():
 
 
 @app.post("/api/simulate", response_model=SimulationResponse)
+@app.post("/api/simulate", response_model=SimulationResponse)
 def simulate_transactions(request: SimulationRequest):
     transactions = []
 
@@ -100,6 +101,18 @@ def simulate_transactions(request: SimulationRequest):
             ip_risk=round(random.random(), 2),
             country_risk=round(random.random(), 2),
         )
+
+        result = calculate_risk(transaction)
+
+        transaction_data = transaction.model_dump()
+        transaction_data.update(
+            {
+                "risk_score": result["risk_score"],
+                "decision": result["decision"],
+            }
+        )
+
+        save_transaction(transaction_data)
 
         transactions.append(transaction)
 
