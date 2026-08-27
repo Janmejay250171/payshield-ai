@@ -2,7 +2,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from backend.database import init_database, save_transaction
+from backend.database import (
+    get_transaction_metrics,
+    init_database,
+    save_transaction,
+)
 from backend.risk_engine import calculate_risk
 from backend.schemas import (
     DetectionRequest,
@@ -64,3 +68,8 @@ def detect_transaction(request: DetectionRequest):
         model_scores=result["model_scores"],
         signals=result["signals"],
     )
+
+
+@app.get("/api/metrics")
+def metrics():
+    return get_transaction_metrics()
