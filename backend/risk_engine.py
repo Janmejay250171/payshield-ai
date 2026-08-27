@@ -3,7 +3,10 @@ from typing import Any, Dict
 from backend.schemas import Transaction
 
 
-def calculate_risk(transaction: Transaction) -> Dict[str, Any]:
+def calculate_risk(
+    transaction: Transaction,
+    ml_score: float | None = None,
+) -> Dict[str, Any]:
     """
     Initial PAYSHIELD risk engine.
 
@@ -59,7 +62,8 @@ def calculate_risk(transaction: Transaction) -> Dict[str, Any]:
     elif transaction.country_risk >= 0.5:
         score += 8
         explanations.append("Suspicious country signal")
-
+    if ml_score is not None:
+        score = combine_model_scores(score, ml_score)
     score = min(score, 100.0)
 
     # Decision thresholds
@@ -88,3 +92,12 @@ def calculate_risk(transaction: Transaction) -> Dict[str, Any]:
             "country_risk": transaction.country_risk,
         },
     }
+def combine_model_scores(
+    rule_score: float,
+    ml_score: float | None = None,
+) -> float:
+    if ml_score is None:
+        return round(rule_score, 2)
+
+    combined = (0.4 * rule_score) + (0.6 * ml_score * 100)
+    return round(min(combined, 100.0), 2)
