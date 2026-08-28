@@ -141,9 +141,11 @@ def simulate_transactions(request: SimulationRequest):
             country_risk=round(random.random(), 2),
         )
 
-        result = calculate_risk(transaction)
-
         transaction_data = transaction.model_dump()
+        transaction_data["transaction_id"] = transaction_data["txn_id"]
+
+        result = ml_risk_engine.score_transaction(transaction_data)
+
         transaction_data.update(
             {
                 "risk_score": result["risk_score"],
@@ -192,7 +194,10 @@ def adversarial_battle(request: AdversarialBattleRequest):
             }
         )
 
-        detection = calculate_risk(modified_transaction)
+        transaction_data = modified_transaction.model_dump()
+        transaction_data["transaction_id"] = transaction_data["txn_id"]
+
+        detection = ml_risk_engine.score_transaction(transaction_data)
 
         results.append(
             {
