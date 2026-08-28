@@ -14,12 +14,10 @@ class Transaction(BaseModel):
     timestamp: str
     country: str = "IN"
 
-    velocity_1h: int = 0
-    device_risk: float = 0.0
-    ip_risk: float = 0.0
-    country_risk: float = 0.0
-
-
+    velocity_1h: int = Field(default=0, ge=0)
+    device_risk: float = Field(default=0.0, ge=0.0, le=1.0)
+    ip_risk: float = Field(default=0.0, ge=0.0, le=1.0)
+    country_risk: float = Field(default=0.0, ge=0.0, le=1.0)
 class DetectionRequest(BaseModel):
     transaction: Transaction
 
