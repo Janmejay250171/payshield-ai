@@ -125,3 +125,33 @@ def get_transaction_metrics() -> Dict[str, Any]:
         "blocked": blocked,
         "average_risk_score": round(float(average), 4),
     }
+def get_transaction_by_id(txn_id: str) -> Dict[str, Any] | None:
+    connection = get_connection()
+
+    row = connection.execute(
+        "SELECT * FROM transactions WHERE txn_id = ?",
+        (txn_id,),
+    ).fetchone()
+
+    connection.close()
+
+    if row is None:
+        return None
+
+    return dict(row)
+def get_recent_transactions(limit: int = 20) -> List[Dict[str, Any]]:
+    connection = get_connection()
+
+    rows = connection.execute(
+        """
+        SELECT *
+        FROM transactions
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    connection.close()
+
+    return [dict(row) for row in rows]

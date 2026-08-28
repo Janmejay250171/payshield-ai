@@ -1,9 +1,11 @@
 import random
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from backend.database import (
+    get_recent_transactions,
+    get_transaction_by_id,
     get_transaction_metrics,
     init_database,
     save_transaction,
@@ -81,8 +83,22 @@ def detect_transaction(request: DetectionRequest):
 def metrics():
     return get_transaction_metrics()
 
+@app.get("/api/transactions")
+def get_transactions(limit: int = 20):
+    limit = max(1, min(limit, 100))
+    return get_recent_transactions(limit)
 
-@app.post("/api/simulate", response_model=SimulationResponse)
+@app.get("/api/transactions/{txn_id}")
+def get_transaction(txn_id: str):
+    transaction = get_transaction_by_id(txn_id)
+
+    if transaction is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Transaction not found",
+        )
+
+    return transaction
 @app.post("/api/simulate", response_model=SimulationResponse)
 def simulate_transactions(request: SimulationRequest):
     transactions = []
