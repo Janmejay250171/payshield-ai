@@ -66,7 +66,7 @@ def detect_transaction(request: DetectionRequest):
 
     # The current API has device_id, while the ML model
     # expects a device_type category.
-    transaction_data["device_type"] = transaction.device_type
+    transaction_data["device_type"] = "unknown"
 
     # Person 2's ML engine uses seconds_since_prev.
     # velocity_1h is retained as an API signal.

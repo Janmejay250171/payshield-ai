@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from pydantic import BaseModel, Field
 
@@ -10,6 +10,7 @@ class Transaction(BaseModel):
     currency: str = "INR"
     merchant_id: str
     device_id: str
+    device_type: str = "mobile"
     ip_address: str
     timestamp: str
     country: str = "IN"
@@ -18,6 +19,7 @@ class Transaction(BaseModel):
     device_risk: float = Field(default=0.0, ge=0.0, le=1.0)
     ip_risk: float = Field(default=0.0, ge=0.0, le=1.0)
     country_risk: float = Field(default=0.0, ge=0.0, le=1.0)
+
 class DetectionRequest(BaseModel):
     transaction: Transaction
 
