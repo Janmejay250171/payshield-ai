@@ -1,14 +1,11 @@
 "use client";
 
 import React from 'react';
+import useSWR from 'swr';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { TrendingUp, Activity, Smartphone, Zap, ArrowUpRight, ShieldAlert } from 'lucide-react';
 
-const mockData = {
-  risk_score: 0.94,
-  decision: 'BLOCK',
-  reasons: ['new_device', 'high_velocity']
-};
+const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 const historicalData = [
   { time: '10:00', score: 0.12 },
@@ -20,76 +17,104 @@ const historicalData = [
 ];
 
 export default function CommandCenter() {
-  const isBlock = mockData.decision === 'BLOCK';
+  const { data, error, isLoading } = useSWR('/api/metrics', fetcher, { refreshInterval: 2000 });
+
+  // Fallbacks if backend is unreachable
+  const resilienceScore = data?.resilience_score ?? 94.0;
+  const threatLevel = data?.threat_level ?? 'BLOCK';
+  const blocked = data?.blocked ?? 15;
+  const isElevated = threatLevel === 'CRITICAL' || threatLevel === 'BLOCK';
 
   return (
     <div className="w-full space-y-6">
       
-      {/* Top KPI Cards (Minimalist Fintech Style) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        {/* Risk Score Card */}
+        {/* Risk Score / Resilience Score Card */}
         <div className="bg-white rounded-2xl p-8 shadow-sm flex flex-col justify-between h-48 border border-slate-200">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Risk Score</span>
-            <Activity className="w-4 h-4 text-rose-500" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Resilience Score</span>
+            <Activity className="w-4 h-4 text-emerald-500" />
           </div>
           <div className="flex items-end justify-between">
-            <span className="text-5xl font-extrabold text-rose-600">{(mockData.risk_score * 100).toFixed(0)}</span>
-            <span className="text-xs font-medium text-rose-600 bg-rose-50 px-2.5 py-1 rounded-md flex items-center gap-1 border border-rose-100">
-              <TrendingUp className="w-3 h-3" /> +12%
+            {error ? (
+              <span className="text-2xl font-extrabold text-slate-400">Offline</span>
+            ) : isLoading ? (
+              <span className="text-2xl font-extrabold text-slate-400 animate-pulse">Loading...</span>
+            ) : (
+              <span className="text-5xl font-extrabold text-emerald-600">{resilienceScore.toFixed(0)}</span>
+            )}
+            <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md flex items-center gap-1 border border-emerald-100">
+              <TrendingUp className="w-3 h-3" /> System Health
             </span>
           </div>
         </div>
 
-        {/* Decision Card */}
+        {/* Threat Level Card */}
         <div className="bg-white rounded-2xl p-8 shadow-sm flex flex-col justify-between h-48 border border-slate-200">
            <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Automated Decision</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Threat Level</span>
             <ShieldAlert className="w-4 h-4 text-indigo-500" />
           </div>
           <div className="flex items-end justify-between">
-            <span className="text-5xl font-extrabold text-slate-900">{mockData.decision}</span>
+            {error ? (
+              <span className="text-2xl font-extrabold text-slate-400">Offline</span>
+            ) : isLoading ? (
+              <span className="text-2xl font-extrabold text-slate-400 animate-pulse">Loading...</span>
+            ) : (
+              <span className="text-4xl font-extrabold text-slate-900">{threatLevel}</span>
+            )}
             <span className="text-sm text-slate-400">
-              Terminated
+              Current Status
             </span>
           </div>
         </div>
 
-        {/* Status Card */}
+        {/* Blocked Count Card */}
         <div className="bg-white rounded-2xl p-8 shadow-sm flex flex-col justify-between h-48 border border-slate-200">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">System Status</span>
-            <Zap className="w-4 h-4 text-emerald-500" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Threats Blocked</span>
+            <Zap className="w-4 h-4 text-rose-500" />
           </div>
           <div className="flex items-end justify-between">
-            <span className="text-5xl font-extrabold text-emerald-600">Active</span>
+            {error ? (
+              <span className="text-2xl font-extrabold text-slate-400">Offline</span>
+            ) : isLoading ? (
+              <span className="text-2xl font-extrabold text-slate-400 animate-pulse">Loading...</span>
+            ) : (
+              <span className="text-5xl font-extrabold text-rose-600">{blocked}</span>
+            )}
             <span className="text-sm text-slate-400">
-              Optimal
+              Mitigated
             </span>
           </div>
         </div>
       </div>
 
-      {/* Main Content Area */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Reasons Card */}
+        {/* Reasons Card (Static as metrics don't provide reasons) */}
         <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200 col-span-1 flex flex-col h-[28rem]">
-          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-8">Flagged Indicators</h2>
+          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-8">Active Threat Vectors</h2>
           <div className="flex flex-col gap-5 flex-1">
-            {mockData.reasons.map((reason, idx) => (
-              <div key={idx} className="flex items-center gap-4 p-5 bg-slate-50 rounded-xl border border-slate-100">
-                <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-200 flex-shrink-0">
-                  {reason === 'new_device' && <Smartphone className="w-5 h-5 text-blue-600" />}
-                  {reason === 'high_velocity' && <Zap className="w-5 h-5 text-orange-500" />}
-                </div>
-                <div>
-                  <div className="text-slate-900 font-semibold text-sm capitalize">{reason.replace('_', ' ')}</div>
-                  <div className="text-slate-400 text-sm mt-0.5">Primary vector detected</div>
-                </div>
+            <div className="flex items-center gap-4 p-5 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-200 flex-shrink-0">
+                <Smartphone className="w-5 h-5 text-blue-600" />
               </div>
-            ))}
+              <div>
+                <div className="text-slate-900 font-semibold text-sm capitalize">New Device Mismatch</div>
+                <div className="text-slate-400 text-sm mt-0.5">Primary vector detected</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-4 p-5 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-sm border border-slate-200 flex-shrink-0">
+                <Zap className="w-5 h-5 text-orange-500" />
+              </div>
+              <div>
+                <div className="text-slate-900 font-semibold text-sm capitalize">High Velocity IPs</div>
+                <div className="text-slate-400 text-sm mt-0.5">Secondary vector detected</div>
+              </div>
+            </div>
           </div>
         </div>
 

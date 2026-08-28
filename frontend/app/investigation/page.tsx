@@ -1,42 +1,57 @@
 "use client";
 
 import React from 'react';
+import useSWR from 'swr';
 import { Search, AlertOctagon, Fingerprint, MapPin, CreditCard, Activity, Box, Info } from 'lucide-react';
 
-const mockTxn = {
-  id: 'TXN-9843A-XQ2',
-  amount: 4500.00,
-  currency: 'USD',
-  status: 'BLOCKED',
-  timestamp: '2026-08-27T10:24:12Z',
-  xgboost_score: 0.94,
-  rules_triggered: ['R-101 (Velocity)', 'R-103 (Impossible Travel)'],
-  features: {
-    ip: '192.168.1.1 (Proxy)',
-    country: 'RU',
-    device_id: 'DEV-NEW-8832',
-    account_age_days: 2,
-    distance_from_last_txn_km: 8400
-  }
-};
+const postFetcher = (url: string) => fetch(url, { 
+  method: 'POST', 
+  headers: { 'Content-Type': 'application/json' }, 
+  body: JSON.stringify({ count: 1, attack_ratio: 1.0 }) 
+}).then(res => res.json());
 
 export default function InvestigationDashboard() {
+  const { data, error, isLoading } = useSWR('/api/simulate', postFetcher, { refreshInterval: 2000 });
+
+  // Use live data if available, otherwise fallback to prevent crash
+  const latestTxn = data?.sample_results?.[0] ?? null;
+  
+  const txnId = latestTxn?.transaction?.transaction_id ?? 'TXN-9843A-XQ2';
+  const amount = latestTxn?.transaction?.amount ?? 4500.00;
+  const timestamp = latestTxn?.transaction?.timestamp ?? '2026-08-27T10:24:12Z';
+  const xgboostScore = latestTxn?.risk_result?.risk_score ?? 0.94;
+  const decision = latestTxn?.risk_result?.decision ?? 'BLOCK';
+  const rulesTriggered = latestTxn?.risk_result?.reasons ?? ['Velocity Threshold', 'Impossible Travel'];
+  
+  const features = {
+    ip: latestTxn?.transaction?.ip_address ?? '192.168.1.1 (Proxy)',
+    country: latestTxn?.transaction?.country ?? 'RU',
+    device_id: latestTxn?.transaction?.device_type ?? 'DEV-NEW-8832',
+    time_since_prev: latestTxn?.transaction?.seconds_since_prev ?? 15
+  };
+
+  const isBlocked = decision === 'BLOCK' || decision === 'REVIEW';
+
   return (
     <div className="w-full space-y-6">
       
       {/* Header Summary (Minimalist Fintech Style) */}
       <div className="bg-white rounded-2xl p-8 shadow-sm flex items-center justify-between border border-slate-200">
         <div>
-          <div className="font-semibold flex items-center gap-2 mb-4 text-xs text-rose-700 bg-rose-50 border border-rose-100 w-fit px-2.5 py-1 rounded-md uppercase tracking-wider">
-            <AlertOctagon className="w-4 h-4 text-rose-600" />
-            Transaction Blocked
+          <div className={`font-semibold flex items-center gap-2 mb-4 text-xs w-fit px-2.5 py-1 rounded-md uppercase tracking-wider ${
+            isBlocked ? 'text-rose-700 bg-rose-50 border border-rose-100' : 'text-emerald-700 bg-emerald-50 border border-emerald-100'
+          }`}>
+            <AlertOctagon className={`w-4 h-4 ${isBlocked ? 'text-rose-600' : 'text-emerald-600'}`} />
+            Transaction {decision}
           </div>
-          <div className="text-5xl font-extrabold tracking-tight mb-2 text-slate-900">{mockTxn.id}</div>
-          <div className="text-slate-400 text-sm font-mono">{mockTxn.timestamp}</div>
+          <div className="text-5xl font-extrabold tracking-tight mb-2 text-slate-900">
+            {error ? 'OFFLINE' : isLoading ? 'Loading...' : txnId}
+          </div>
+          <div className="text-slate-400 text-sm font-mono">{timestamp}</div>
         </div>
         <div className="text-right">
           <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-2">Amount Attempted</div>
-          <div className="text-5xl font-extrabold text-slate-900">${mockTxn.amount.toFixed(0)} <span className="text-2xl font-medium text-slate-400">{mockTxn.currency}</span></div>
+          <div className="text-5xl font-extrabold text-slate-900">${amount.toFixed(0)} <span className="text-2xl font-medium text-slate-400">USD</span></div>
         </div>
       </div>
 
@@ -55,16 +70,18 @@ export default function InvestigationDashboard() {
                 <span className="text-slate-500 font-medium text-xs uppercase tracking-wider">
                   Risk Score
                 </span>
-                <span className="text-slate-900 font-extrabold text-lg">{(mockTxn.xgboost_score * 100).toFixed(1)} <span className="text-slate-400 text-sm font-normal">/ 100</span></span>
+                <span className="text-slate-900 font-extrabold text-lg">{(xgboostScore * 100).toFixed(1)} <span className="text-slate-400 text-sm font-normal">/ 100</span></span>
               </div>
               <div className="w-full bg-slate-100 rounded-full h-2">
-                <div className="bg-rose-500 h-2 rounded-full" style={{ width: `${mockTxn.xgboost_score * 100}%` }}></div>
+                <div className={`h-2 rounded-full transition-all duration-500 ${isBlocked ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: `${xgboostScore * 100}%` }}></div>
               </div>
             </div>
             <div>
               <div className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-4">Heuristic Rules Triggered</div>
               <div className="flex flex-col gap-3">
-                {mockTxn.rules_triggered.map((rule, i) => (
+                {rulesTriggered.length === 0 ? (
+                  <span className="text-sm text-slate-400 italic">No rules triggered</span>
+                ) : rulesTriggered.map((rule: string, i: number) => (
                   <span key={i} className="px-4 py-2.5 bg-slate-50 border border-slate-100 text-slate-900 text-sm font-semibold rounded-xl flex items-center gap-3">
                     <AlertOctagon className="w-4 h-4 text-rose-500" />
                     {rule}
@@ -85,20 +102,16 @@ export default function InvestigationDashboard() {
           </div>
           <div className="space-y-3 flex-1 text-sm">
             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <div className="flex items-center gap-3 text-slate-500 font-medium"><MapPin className="w-4 h-4 text-blue-600" /> Origin IP</div>
-              <div className="font-mono text-slate-900 font-semibold">{mockTxn.features.ip}</div>
+              <div className="flex items-center gap-3 text-slate-500 font-medium"><MapPin className="w-4 h-4 text-blue-600" /> Origin IP / Country</div>
+              <div className="font-mono text-slate-900 font-semibold">{features.ip} ({features.country})</div>
             </div>
             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
               <div className="flex items-center gap-3 text-slate-500 font-medium"><Fingerprint className="w-4 h-4 text-indigo-500" /> Device ID</div>
-              <div className="font-mono text-slate-900 font-semibold">{mockTxn.features.device_id}</div>
+              <div className="font-mono text-slate-900 font-semibold">{features.device_id}</div>
             </div>
             <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <div className="flex items-center gap-3 text-slate-500 font-medium"><CreditCard className="w-4 h-4 text-emerald-500" /> Account Age</div>
-              <div className="font-semibold text-slate-900">{mockTxn.features.account_age_days} Days</div>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-              <div className="flex items-center gap-3 text-slate-500 font-medium"><Activity className="w-4 h-4 text-rose-500" /> Travel Velocity</div>
-              <div className="font-semibold text-rose-600">{mockTxn.features.distance_from_last_txn_km} km</div>
+              <div className="flex items-center gap-3 text-slate-500 font-medium"><Activity className="w-4 h-4 text-rose-500" /> Time Since Prev</div>
+              <div className="font-semibold text-rose-600">{features.time_since_prev.toFixed(1)} sec</div>
             </div>
           </div>
         </div>

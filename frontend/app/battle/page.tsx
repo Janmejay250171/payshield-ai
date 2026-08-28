@@ -1,8 +1,11 @@
 "use client";
 
 import React from 'react';
+import useSWR from 'swr';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Activity, ShieldAlert, ShieldCheck } from 'lucide-react';
+
+const fetcher = (url: string) => fetch(url).then(res => res.json());
 
 const battleTimeline = [
   { time: '00:00', load: 100, mitigated: 98 },
@@ -15,6 +18,11 @@ const battleTimeline = [
 ];
 
 export default function BattleDashboard() {
+  const { data, error, isLoading } = useSWR('/api/adversarial-battle', fetcher, { refreshInterval: 2000 });
+
+  const generated = data?.red_attacks_generated ?? 450;
+  const caught = Math.round(generated * (data?.blue_catch_rate ?? 0.988));
+
   return (
     <div className="w-full space-y-6">
       
@@ -26,7 +34,13 @@ export default function BattleDashboard() {
             <ShieldAlert className="w-4 h-4 text-rose-500" />
           </div>
           <div className="flex items-end justify-between">
-            <span className="text-5xl font-extrabold text-rose-600">450 <span className="text-xl font-medium text-slate-400">req/s</span></span>
+            {error ? (
+              <span className="text-3xl font-extrabold text-slate-400">Offline</span>
+            ) : isLoading ? (
+              <span className="text-3xl font-extrabold text-slate-400 animate-pulse">Loading...</span>
+            ) : (
+              <span className="text-5xl font-extrabold text-rose-600">{generated} <span className="text-xl font-medium text-slate-400">total</span></span>
+            )}
             <span className="text-sm text-slate-400">
               Red Team
             </span>
@@ -40,7 +54,13 @@ export default function BattleDashboard() {
             <ShieldCheck className="w-4 h-4 text-blue-600" />
           </div>
           <div className="flex items-end justify-between">
-            <span className="text-5xl font-extrabold text-blue-600">445 <span className="text-xl font-medium text-slate-400">req/s</span></span>
+            {error ? (
+              <span className="text-3xl font-extrabold text-slate-400">Offline</span>
+            ) : isLoading ? (
+              <span className="text-3xl font-extrabold text-slate-400 animate-pulse">Loading...</span>
+            ) : (
+              <span className="text-5xl font-extrabold text-blue-600">{caught} <span className="text-xl font-medium text-slate-400">total</span></span>
+            )}
             <span className="text-sm text-slate-400">
               Blue Team
             </span>
