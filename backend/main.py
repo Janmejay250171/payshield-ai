@@ -23,7 +23,7 @@ app.add_middleware(
 )
 
 risk_engine = PayShieldRiskEngine(models_dir=os.path.join(ROOT_DIR, "models_saved"))
-simulator = PaymentSimulator(models_dir=os.path.join(ROOT_DIR, "models_saved"))
+simulator = PaymentSimulator()
 
 # In-memory store for Transaction Investigation details
 transaction_store: Dict[str, Any] = {}
@@ -46,7 +46,7 @@ class SimulateRequest(BaseModel):
 @app.post("/api/detect")
 def detect_transaction(payload: DetectRequest):
     result = risk_engine.score_transaction(payload.dict())
-    transaction_store[result["transaction_id"]] = result
+    t_id = payload.transaction_id; result["transaction_id"] = t_id; transaction_store[t_id] = result
     return result
 
 @app.post("/api/simulate")
@@ -54,7 +54,7 @@ def run_simulation(payload: SimulateRequest):
     results = simulator.run_simulation_batch(count=payload.count, attack_ratio=payload.attack_ratio)
     for r in results:
         t_id = r["transaction"]["transaction_id"]
-        transaction_store[t_id] = r["result"]
+        transaction_store[t_id] = r.get("assessment", r.get("result", {}))
     return {
         "status": "success",
         "processed_count": len(results),
