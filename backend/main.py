@@ -78,6 +78,39 @@ def get_adversarial_battle():
         "active_attack_families": red_team.attack_families
     }
 
+@app.get("/api/transactions/{tx_id}")
+def get_transaction(tx_id: str):
+    """Deep dive investigation payload for a single transaction."""
+    # Since there's no DB, we generate a deterministic-looking response for the frontend
+    import random
+    
+    score = random.randint(85, 99)
+    return {
+        "id": tx_id,
+        "amount": random.choice([45000.0, 12500.0, 99999.0]),
+        "currency": "INR",
+        "status": "BLOCKED",
+        "merchant": {
+            "name": "CryptoExchange_XYZ",
+            "category": "High-Risk Finance"
+        },
+        "user": {
+            "id": f"USER_{random.randint(1000, 9999)}",
+            "ip_address": f"185.{random.randint(10, 255)}.101.{random.randint(1, 255)}"
+        },
+        "xgboost_score": score,
+        "rules_triggered": [
+            {"name": "Velocity_Spike_1H", "severity": "High"},
+            {"name": "IP_Geolocation_Mismatch", "severity": "Critical"},
+            {"name": "New_Device_High_Amount", "severity": "Medium"}
+        ],
+        "connected_entities": [
+            {"entity_type": "Device_ID", "risk_weight": 40},
+            {"entity_type": "Shared_IP", "risk_weight": 35},
+            {"entity_type": "Previous_Fraud_Acct", "risk_weight": 25}
+        ]
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)
