@@ -4,3 +4,85 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
+
+/* =========================================================
+   PAYSHIELD — GLOBAL UI POLISH
+   ========================================================= */
+
+:root {
+  --ps-bg: #f5f7fa;
+  --ps-card: #ffffff;
+  --ps-border: #e5eaf0;
+  --ps-text: #0f172a;
+  --ps-muted: #64748b;
+  --ps-blue: #2563eb;
+  --ps-red: #e11d48;
+  --ps-green: #059669;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--ps-bg);
+  color: var(--ps-text);
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Cleaner scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Better focus accessibility */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--ps-blue);
+  outline-offset: 2px;
+}
+
+/* Smooth interaction */
+button,
+a {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+/* Prevent accidental horizontal overflow */
+body {
+  overflow-x: hidden;
+}
+
+/* Selection */
+::selection {
+  background: #dbeafe;
+  color: #0f172a;
+}
