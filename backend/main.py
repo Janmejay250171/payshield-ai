@@ -2,6 +2,7 @@ import random
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.database import (
     get_recent_transactions,
@@ -36,7 +37,13 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 ml_risk_engine = PayShieldRiskEngine()
 @app.get("/")
 def root():
@@ -119,7 +126,61 @@ def get_transaction(txn_id: str):
             detail="Transaction not found",
         )
 
-    return transaction
+    graph = ml_risk_engine.graph_analyzer.G
+
+    nodes = []
+    edges = []
+
+    # Only include entities connected to this transaction
+    user_id = transaction.get("user_id")
+    device_id = transaction.get("device_id")
+    ip_address = transaction.get("ip_address")
+
+    connected_entities = {
+        user_id,
+        device_id,
+        ip_address,
+    }
+
+    # Add recipient if your transaction/database contains it
+    recipient_id = transaction.get("recipient_id")
+    if recipient_id:
+        connected_entities.add(recipient_id)
+
+    for node in connected_entities:
+        if node is not None and graph.has_node(node):
+            nodes.append(
+                {
+                    "id": str(node),
+                    "type": graph.nodes[node].get(
+                        "node_type",
+                        "unknown",
+                    ),
+                }
+            )
+
+    # Add edges between the connected entities
+    for source, target, data in graph.edges(data=True):
+        if source in connected_entities and target in connected_entities:
+            edges.append(
+                {
+                    "source": str(source),
+                    "target": str(target),
+                    "relation": data.get(
+                        "relation",
+                        "CONNECTED",
+                    ),
+                    "txn_id": data.get("txn_id"),
+                }
+            )
+
+    return {
+        **transaction,
+        "connected_entities": {
+            "nodes": nodes,
+            "edges": edges,
+        },
+    }
 @app.post("/api/simulate", response_model=SimulationResponse)
 def simulate_transactions(request: SimulationRequest):
     transactions = []
