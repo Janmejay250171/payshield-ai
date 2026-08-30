@@ -1,35 +1,49 @@
 "use client";
 
-import React from 'react';
-import useSWR from 'swr';
+import React, { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Target, TrendingUp, ShieldAlert, Activity, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { fetchWrapper } from '../../lib/apiClient';
 
-const fetcher = (url: string) => fetch(url).then(res => res.json());
 
-const timelineData = [
-  { time: '10:00', generation: 120, bypasses: 2 },
-  { time: '10:05', generation: 210, bypasses: 5 },
-  { time: '10:10', generation: 380, bypasses: 15 },
-  { time: '10:15', generation: 320, bypasses: 12 },
-  { time: '10:20', generation: 550, bypasses: 42 },
-  { time: '10:25', generation: 428, bypasses: 28 },
-];
 
 export default function RedTeamDashboard() {
-  const { data, error, isLoading } = useSWR('/api/adversarial-battle', fetcher, { refreshInterval: 2000 });
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [chartData, setChartData] = useState<any[]>([]);
 
-  const generated = data?.red_attacks_generated ?? 428;
-  const successRate = data?.red_success_rate ?? 0.065;
+  useEffect(() => {
+    const fetchBattle = async () => {
+      const { data: resData, error: resError } = await fetchWrapper('api/adversarial-battle');
+      if (resError || !resData) {
+        setError(true);
+      } else {
+        setData(resData);
+        setError(false);
+        setChartData((prev) => {
+          const newPoint = {
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            generation: resData.red_attacks_generated ?? 0,
+            bypasses: Math.round((resData.red_attacks_generated ?? 0) * (resData.red_success_rate ?? 0))
+          };
+          const updated = [...prev, newPoint];
+          return updated.slice(-20);
+        });
+      }
+      setIsLoading(false);
+    };
+
+    fetchBattle();
+    const interval = setInterval(fetchBattle, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const generated = data?.red_attacks_generated ?? 0;
+  const successRate = data?.red_success_rate ?? 0.0;
   
   // The backend returns a list of strings for active_attack_families, NOT a dictionary.
-  const rawFamilies = data?.active_attack_families ?? [
-    'ACCOUNT_TAKEOVER',
-    'SYNTHETIC_IDENTITY',
-    'AI_IMPERSONATION',
-    'SMURFING',
-    'ADAPTIVE_MUTATION'
-  ];
+  const rawFamilies = data?.active_attack_families ?? [];
   
   const activeVectors = rawFamilies.map((name: string, idx: number) => ({
     name: name.replace(/_/g, ' '),
@@ -40,44 +54,44 @@ export default function RedTeamDashboard() {
   return (
     <div className="w-full space-y-6">
       
-      {/* Top KPI Cards (Minimalist Fintech Style) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Top KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
         
         {/* Load Rate Card */}
-        <div className="bg-white rounded-2xl p-8 shadow-sm flex flex-col justify-between h-48 border border-slate-200">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Simulated Load</span>
-            <Activity className="w-4 h-4 text-blue-600" />
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Simulated Load</h2>
+            <Activity className="w-4 h-4 text-slate-400" />
           </div>
-          <div className="flex items-end justify-between">
+          <div className="flex items-baseline gap-3">
             {error ? (
-              <span className="text-3xl font-extrabold text-slate-400">Offline</span>
+              <span className="text-3xl font-bold text-slate-400 tracking-tight">Offline</span>
             ) : isLoading ? (
-              <span className="text-3xl font-extrabold text-slate-400 animate-pulse">Loading...</span>
+              <span className="text-3xl font-bold text-slate-400 tracking-tight animate-pulse">Loading...</span>
             ) : (
-              <span className="text-5xl font-extrabold text-slate-900">{generated} <span className="text-xl font-medium text-slate-400">total</span></span>
+              <span className="text-3xl font-bold text-slate-900 tracking-tight">{generated}</span>
             )}
-            <span className="text-xs font-medium text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md flex items-center gap-1 border border-blue-100">
+            <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded-md border border-blue-100 flex items-center gap-1">
               <ArrowUpRight className="w-3 h-3" /> Live
             </span>
           </div>
         </div>
 
         {/* Bypass Rate Card */}
-        <div className="bg-white rounded-2xl p-8 shadow-sm flex flex-col justify-between h-48 border border-slate-200">
-           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">System Bypass Rate</span>
-            <ShieldAlert className="w-4 h-4 text-rose-500" />
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">System Bypass Rate</h2>
+            <ShieldAlert className="w-4 h-4 text-slate-400" />
           </div>
-          <div className="flex items-end justify-between">
+          <div className="flex items-baseline gap-3">
             {error ? (
-              <span className="text-3xl font-extrabold text-slate-400">Offline</span>
+              <span className="text-3xl font-bold text-slate-400 tracking-tight">Offline</span>
             ) : isLoading ? (
-              <span className="text-3xl font-extrabold text-slate-400 animate-pulse">Loading...</span>
+              <span className="text-3xl font-bold text-slate-400 tracking-tight animate-pulse">Loading...</span>
             ) : (
-              <span className="text-5xl font-extrabold text-rose-600">{(successRate * 100).toFixed(1)}%</span>
+              <span className="text-3xl font-bold text-slate-900 tracking-tight">{(successRate * 100).toFixed(1)}%</span>
             )}
-            <span className="text-xs font-medium text-rose-700 bg-rose-50 px-2.5 py-1 rounded-md flex items-center gap-1 border border-rose-100">
+            <span className="text-xs font-semibold text-rose-600 bg-rose-50 px-2 py-1 rounded-md border border-rose-100 flex items-center gap-1">
               <ArrowDownRight className="w-3 h-3" /> Tracked
             </span>
           </div>
@@ -86,15 +100,13 @@ export default function RedTeamDashboard() {
       </div>
 
       {/* Main Content Area */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6">
         
         {/* Active Vectors Breakdown */}
-        <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200 col-span-1 flex flex-col h-[28rem]">
-          <div className="flex items-center justify-between mb-8">
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col h-[28rem]">
+          <div className="flex items-center justify-between mb-6">
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active Vectors</h2>
-            <div className="p-2 bg-slate-50 rounded-full border border-slate-100">
-               <Target className="w-4 h-4 text-slate-400" />
-            </div>
+            <Target className="w-4 h-4 text-slate-400" />
           </div>
           
           <div className="flex flex-col gap-6 flex-1 overflow-y-auto pr-2">
@@ -116,17 +128,15 @@ export default function RedTeamDashboard() {
         </div>
 
         {/* Timeline Chart */}
-        <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200 col-span-1 lg:col-span-2 h-[28rem] flex flex-col">
-          <div className="flex items-center justify-between mb-8">
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col h-[28rem]">
+          <div className="flex items-center justify-between mb-6">
             <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Simulation Timeline Volume</h2>
-            <div className="p-2 bg-slate-50 rounded-full border border-slate-100">
-               <TrendingUp className="w-4 h-4 text-slate-400" />
-            </div>
+            <TrendingUp className="w-4 h-4 text-slate-400" />
           </div>
           
           <div className="flex-1 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={timelineData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorGen" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#2563EB" stopOpacity={0.15}/>

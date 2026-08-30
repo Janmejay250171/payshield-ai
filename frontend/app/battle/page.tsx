@@ -1,67 +1,83 @@
 "use client";
 
-import React from 'react';
-import useSWR from 'swr';
+import React, { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Activity, ShieldAlert, ShieldCheck } from 'lucide-react';
-
-const fetcher = (url: string) => fetch(url).then(res => res.json());
-
-const battleTimeline = [
-  { time: '00:00', load: 100, mitigated: 98 },
-  { time: '00:01', load: 150, mitigated: 145 },
-  { time: '00:02', load: 300, mitigated: 210 }, 
-  { time: '00:03', load: 280, mitigated: 275 }, 
-  { time: '00:04', load: 400, mitigated: 390 },
-  { time: '00:05', load: 550, mitigated: 420 }, 
-  { time: '00:06', load: 450, mitigated: 445 }, 
-];
+import { fetchWrapper } from '../../lib/apiClient';
 
 export default function BattleDashboard() {
-  const { data, error, isLoading } = useSWR('/api/adversarial-battle', fetcher, { refreshInterval: 2000 });
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [combatData, setCombatData] = useState<any[]>([]);
 
-  const generated = data?.red_attacks_generated ?? 450;
-  const caught = Math.round(generated * (data?.blue_catch_rate ?? 0.988));
+  useEffect(() => {
+    const fetchBattle = async () => {
+      const { data: resData, error: resError } = await fetchWrapper('api/adversarial-battle');
+      if (resError || !resData) {
+        setError(true);
+      } else {
+        setData(resData);
+        setError(false);
+        setCombatData((prev) => {
+          const newPoint = {
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            load: resData.red_attacks_generated ?? 0,
+            mitigated: Math.round((resData.red_attacks_generated ?? 0) * (resData.blue_catch_rate ?? 0))
+          };
+          return [...prev, newPoint].slice(-20);
+        });
+      }
+      setIsLoading(false);
+    };
+
+    fetchBattle();
+    const interval = setInterval(fetchBattle, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const generated = data?.red_attacks_generated ?? 0;
+  const caught = data ? Math.round(generated * data.blue_catch_rate) : 0;
 
   return (
     <div className="w-full space-y-6">
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         {/* Threat Load Side */}
-        <div className="bg-white rounded-2xl p-8 shadow-sm flex flex-col justify-between h-48 border border-slate-200">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Simulated Threat Load</span>
-            <ShieldAlert className="w-4 h-4 text-rose-500" />
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Simulated Threat Load</h2>
+            <ShieldAlert className="w-4 h-4 text-slate-400" />
           </div>
-          <div className="flex items-end justify-between">
+          <div className="flex items-baseline gap-3">
             {error ? (
-              <span className="text-3xl font-extrabold text-slate-400">Offline</span>
+              <span className="text-3xl font-bold text-slate-400 tracking-tight">Offline</span>
             ) : isLoading ? (
-              <span className="text-3xl font-extrabold text-slate-400 animate-pulse">Loading...</span>
+              <span className="text-3xl font-bold text-slate-400 tracking-tight animate-pulse">Loading...</span>
             ) : (
-              <span className="text-5xl font-extrabold text-rose-600">{generated} <span className="text-xl font-medium text-slate-400">total</span></span>
+              <span className="text-3xl font-bold text-slate-900 tracking-tight">{generated} <span className="text-xl font-medium text-slate-400">total</span></span>
             )}
-            <span className="text-sm text-slate-400">
+            <span className="text-xs font-semibold text-rose-600 bg-rose-50 px-2 py-1 rounded-md border border-rose-100">
               Red Team
             </span>
           </div>
         </div>
         
         {/* Mitigation Side */}
-        <div className="bg-white rounded-2xl p-8 shadow-sm flex flex-col justify-between h-48 border border-slate-200">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Mitigation Capacity</span>
-            <ShieldCheck className="w-4 h-4 text-blue-600" />
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Mitigation Capacity</h2>
+            <ShieldCheck className="w-4 h-4 text-slate-400" />
           </div>
-          <div className="flex items-end justify-between">
+          <div className="flex items-baseline gap-3">
             {error ? (
-              <span className="text-3xl font-extrabold text-slate-400">Offline</span>
+              <span className="text-3xl font-bold text-slate-400 tracking-tight">Offline</span>
             ) : isLoading ? (
-              <span className="text-3xl font-extrabold text-slate-400 animate-pulse">Loading...</span>
+              <span className="text-3xl font-bold text-slate-400 tracking-tight animate-pulse">Loading...</span>
             ) : (
-              <span className="text-5xl font-extrabold text-blue-600">{caught} <span className="text-xl font-medium text-slate-400">total</span></span>
+              <span className="text-3xl font-bold text-slate-900 tracking-tight">{caught} <span className="text-xl font-medium text-slate-400">total</span></span>
             )}
-            <span className="text-sm text-slate-400">
+            <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded-md border border-blue-100">
               Blue Team
             </span>
           </div>
@@ -69,16 +85,14 @@ export default function BattleDashboard() {
       </div>
 
       {/* Tug of War Chart */}
-      <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200 flex flex-col h-[500px]">
-        <div className="flex items-center justify-between mb-8">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col h-[28rem]">
+        <div className="flex items-center justify-between mb-6">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">Live Combat Timeline</h2>
-          <div className="p-2 bg-slate-50 rounded-full border border-slate-100">
-             <Activity className="w-4 h-4 text-slate-400" />
-          </div>
+          <Activity className="w-4 h-4 text-slate-400" />
         </div>
         <div className="flex-1 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={battleTimeline} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+            <AreaChart data={combatData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorLoad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#E11D48" stopOpacity={0.15}/>

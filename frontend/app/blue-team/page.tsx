@@ -1,32 +1,40 @@
 "use client";
 
-import React from 'react';
-import useSWR from 'swr';
+import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';
 import { Target, Lock, CheckCircle2, ShieldCheck, Activity, ArrowUpRight } from 'lucide-react';
+import { fetchWrapper } from '../../lib/apiClient';
 
-const fetcher = (url: string) => fetch(url).then(res => res.json());
 
-const shapData = [
-  { feature: 'Device Age', importance: 0.35 },
-  { feature: 'IP Velocity', importance: 0.28 },
-  { feature: 'Card Country Match', importance: 0.15 },
-  { feature: 'Txn Amount Diff', importance: 0.12 },
-  { feature: 'Time of Day', importance: 0.10 },
-].reverse();
 
 export default function BlueTeamDashboard() {
-  const { data, error, isLoading } = useSWR('/api/metrics', fetcher, { refreshInterval: 2000 });
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [shapData, setShapData] = useState<any[]>([]);
+  const [activeRules, setActiveRules] = useState<any[]>([]);
 
-  const detectionRate = data ? 1 - data.fpr : 0.985;
-  const confidence = data?.resilience_score ?? 92.0;
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      const { data: resData, error: resError } = await fetchWrapper('api/metrics');
+      if (resError || !resData) {
+        setError(true);
+      } else {
+        setData(resData);
+        if (resData.feature_importance) setShapData(resData.feature_importance.reverse());
+        if (resData.active_rules) setActiveRules(resData.active_rules);
+        setError(false);
+      }
+      setIsLoading(false);
+    };
 
-  const activeRules = [
-    { id: 'R-101', name: 'Velocity Threshold Breach', status: 'Active', severity: 'High' },
-    { id: 'R-102', name: 'Known Bad IP Subnet', status: 'Active', severity: 'Critical' },
-    { id: 'R-103', name: 'Impossible Travel', status: 'Active', severity: 'Medium' },
-    { id: 'R-104', name: 'Device Fingerprint Mismatch', status: 'Active', severity: 'High' },
-  ];
+    fetchMetrics();
+    const interval = setInterval(fetchMetrics, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const detectionRate = data?.fpr !== undefined ? 1 - data.fpr : 0;
+  const confidence = data?.resilience_score ?? 0;
 
   return (
     <div className="w-full space-y-6">
@@ -120,7 +128,7 @@ export default function BlueTeamDashboard() {
             </div>
           </div>
           
-          <div className="flex flex-col gap-4 flex-1">
+          <div className="flex flex-col gap-4 flex-1 overflow-y-auto pr-2">
             {activeRules.map((rule, idx) => (
               <div key={idx} className="flex items-center justify-between p-5 bg-slate-50 rounded-xl border border-slate-100">
                 <div className="flex items-center gap-4">

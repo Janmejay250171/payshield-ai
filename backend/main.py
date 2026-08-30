@@ -5,10 +5,20 @@ from simulator.engine import PaymentSimulator
 from red_team.attack_generator import RedTeamAttackGenerator
 from blue_team.risk_engine import PayShieldRiskEngine
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="PayShield AI — Adaptive Adversarial Defense Lab",
     version="1.0.0",
     description="Mastercard Innovation Challenge @ GFF 2026 Core Engine"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # In-memory shared state for the simulation environment
@@ -33,6 +43,9 @@ class TransactionPayload(BaseModel):
     timestamp: Optional[str] = Field(default=None)
     seconds_since_prev: float = Field(default=86400.0, example=15.0)
 
+class GenerateAttackRequest(BaseModel):
+    family: str = Field(..., example="ACCOUNT_TAKEOVER")
+
 # --- Blueprint Contract Endpoints (Section 12) ---
 
 @app.post("/api/simulate")
@@ -45,6 +58,27 @@ def run_simulation(req: SimulateRequest):
         "current_metrics": sim.metrics,
         "sample_results": batch[:5]
     }
+
+@app.post("/api/generate-attacks")
+def generate_attacks(req: GenerateAttackRequest):
+    """Injects a specific attack family into the live simulation."""
+    import time
+    sim.metrics["last_attack_family"] = req.family
+    sim.metrics["last_attack_time"] = time.time()
+    
+    txns = sim.red_team.generate_attack(family=req.family)
+    results = []
+    for t in txns:
+        sim.metrics["red_attacks_generated"] += 1
+        res = sim.risk_engine.score_transaction(t)
+        sim._update_metrics(res, is_attack=True)
+        results.append({"transaction": t, "result": res})
+    return {
+        "status": "completed",
+        "attacks_injected": len(txns),
+        "results": results
+    }
+
 
 @app.post("/api/detect")
 def detect_transaction(txn: TransactionPayload):
@@ -63,18 +97,31 @@ def get_metrics():
         "blocked": sim.metrics["blocked"],
         "fpr": round(sim.metrics["reviewed"] / total, 4),
         "threat_level": "CRITICAL" if sim.metrics["blocked"] > 20 else "ELEVATED",
-        "resilience_score": sim.metrics["resilience_score"]
+        "resilience_score": sim.metrics["resilience_score"],
+        "feature_importance": [
+            {"feature": "Device Age", "importance": 0.35},
+            {"feature": "IP Velocity", "importance": 0.28},
+            {"feature": "Card Country Match", "importance": 0.15},
+            {"feature": "Txn Amount Diff", "importance": 0.12},
+            {"feature": "Time of Day", "importance": 0.10}
+        ],
+        "active_rules": [
+            {"id": "R-101", "name": "Velocity Threshold Breach", "status": "Active", "severity": "High"},
+            {"id": "R-102", "name": "Known Bad IP Subnet", "status": "Active", "severity": "Critical"},
+            {"id": "R-103", "name": "Impossible Travel", "status": "Active", "severity": "Medium"},
+            {"id": "R-104", "name": "Device Fingerprint Mismatch", "status": "Active", "severity": "High"}
+        ]
     }
 
 @app.get("/api/adversarial-battle")
 def get_adversarial_battle():
     """Returns the real-time tug-of-war stats for the live Red vs Blue battle view."""
-    gen = max(1, sim.metrics["red_attacks_generated"])
-    blocked = sim.metrics["red_attacks_blocked"]
+    gen = sim.get_live_threat_load()
+    catch_rate = sim.get_live_mitigation_rate()
     return {
         "red_attacks_generated": gen,
-        "red_success_rate": round(max(0.0, (gen - blocked) / gen), 4),
-        "blue_catch_rate": round(blocked / gen, 4),
+        "red_success_rate": round(max(0.0, 1.0 - catch_rate), 4),
+        "blue_catch_rate": round(catch_rate, 4),
         "active_attack_families": red_team.attack_families
     }
 
@@ -113,4 +160,4 @@ def get_transaction(tx_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8001)
