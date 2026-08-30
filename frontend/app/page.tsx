@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useState } from "react";
 
@@ -23,7 +23,7 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 type Transaction = {
   id: number;
@@ -551,7 +551,7 @@ export default function CommandCenter() {
                         );
 
                       return item
-                        ? `Event #${label} • ${item.time}`
+                        ? `Event #${label} â€¢ ${item.time}`
                         : `Event #${label}`;
                     }}
                     formatter={(value) => [
@@ -636,7 +636,7 @@ export default function CommandCenter() {
               </div>
 
               <div className="mt-1 text-xs text-slate-400">
-                {latestTransaction.user_id} •{" "}
+                {latestTransaction.user_id} â€¢{" "}
                 {latestTransaction.merchant_id}
               </div>
             </div>

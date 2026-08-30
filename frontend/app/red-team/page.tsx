@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useMemo, useState } from "react";
 import {
@@ -320,7 +320,7 @@ export default function RedTeamDashboard() {
             <span className="text-5xl font-extrabold text-slate-900">
               {results.length
                 ? `${((blocked / results.length) * 100).toFixed(1)}`
-                : "—"}
+                : "â€”"}
             </span>
 
             {results.length > 0 && (
@@ -350,7 +350,7 @@ export default function RedTeamDashboard() {
             <span className="text-5xl font-extrabold text-slate-900">
               {results.length
                 ? `${(averageRisk * 100).toFixed(1)}`
-                : "—"}
+                : "â€”"}
             </span>
 
             {results.length > 0 && (
@@ -380,7 +380,7 @@ export default function RedTeamDashboard() {
             <span className="text-5xl font-extrabold text-rose-600">
               {results.length
                 ? `${(bypassRate * 100).toFixed(1)}`
-                : "—"}
+                : "â€”"}
             </span>
 
             {results.length > 0 && (
@@ -699,7 +699,7 @@ export default function RedTeamDashboard() {
 
             <div>
               <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Red Team → Blue Team Results
+                Red Team â†’ Blue Team Results
               </h2>
 
               <p className="text-xs text-slate-400 mt-1">
@@ -808,3 +808,4 @@ export default function RedTeamDashboard() {
     </div>
   );
 }
+
