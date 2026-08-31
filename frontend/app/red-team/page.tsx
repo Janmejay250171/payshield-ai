@@ -110,7 +110,7 @@ export default function RedTeamDashboard() {
           </div>
           
           <div className="flex flex-col gap-6 flex-1 overflow-y-auto pr-2">
-            {activeVectors.map((vector, idx) => (
+            {activeVectors.map((vector: any, idx: number) => (
               <div key={idx} className="space-y-3">
                 <div className="flex justify-between items-end">
                   <span className="text-slate-900 font-semibold text-sm">{vector.name}</span>
