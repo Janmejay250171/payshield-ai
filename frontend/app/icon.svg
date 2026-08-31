@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="shieldGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22c1dc"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+
+    <linearGradient id="innerGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#102a4c"/>
+      <stop offset="100%" stop-color="#07172d"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dark rounded background -->
+  <rect
+    width="64"
+    height="64"
+    rx="14"
+    fill="#07172d"
+  />
+
+  <!-- Shield outline -->
+  <path
+    d="M32 6
+       L53 14
+       V30
+       C53 43 44 53 32 58
+       C20 53 11 43 11 30
+       V14
+       Z"
+    fill="url(#innerGradient)"
+    stroke="url(#shieldGradient)"
+    stroke-width="4"
+    stroke-linejoin="round"
+  />
+
+  <!-- PAYSHIELD P -->
+  <path
+    d="M23 20
+       H34
+       C41 20 45 24 45 30
+       C45 36 41 40 34 40
+       H29
+       V46
+       H23
+       Z
+
+       M29 26
+       V34
+       H34
+       C37 34 39 32.5 39 30
+       C39 27.5 37 26 34 26
+       Z"
+    fill="#ffffff"
+  />
+
+  <!-- Security lock -->
+  <rect
+    x="37"
+    y="40"
+    width="11"
+    height="9"
+    rx="2"
+    fill="#22c1dc"
+  />
+
+  <path
+    d="M40 40
+       V37
+       C40 34.5 41.5 33 43 33
+       C44.5 33 46 34.5 46 37
+       V40"
+    fill="none"
+    stroke="#22c1dc"
+    stroke-width="2.5"
+    stroke-linecap="round"
+  />
+
+  <circle
+    cx="42.5"
+    cy="44"
+    r="1.2"
+    fill="#07172d"
+  />
+
+  <rect
+    x="42"
+    y="44"
+    width="1"
+    height="3"
+    rx="0.5"
+    fill="#07172d"
+  />
+</svg>

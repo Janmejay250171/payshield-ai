@@ -10,8 +10,10 @@ from blue_team.graph_analyzer import GraphAnalyzer
 class PayShieldRiskEngine:
 
     def __init__(self, artifacts_dir="models_saved"):
+
         self.rule_engine = RuleEngine()
         self.graph_analyzer = GraphAnalyzer()
+
         self.artifacts_dir = artifacts_dir
 
         self.xgb_model = None
@@ -31,7 +33,6 @@ class PayShieldRiskEngine:
     # =========================================================
 
     def load_artifacts(self):
-        """Load trained ML models and metadata."""
 
         xgb_path = os.path.join(
             self.artifacts_dir,
@@ -70,6 +71,7 @@ class PayShieldRiskEngine:
             print("PayShield ML artifacts loaded successfully.")
 
         except Exception as exc:
+
             print(
                 f"Warning: ML artifacts could not be loaded: {exc}"
             )
@@ -79,10 +81,6 @@ class PayShieldRiskEngine:
     # =========================================================
 
     def _get_device_type(self, txn):
-        """
-        Convert API device information into one of the
-        categorical device types expected by the trained model.
-        """
 
         device_type = txn.get("device_type")
 
@@ -107,10 +105,6 @@ class PayShieldRiskEngine:
     # =========================================================
 
     def _get_transaction_type(self, txn):
-        """
-        Return a transaction type compatible with the
-        saved ML model.
-        """
 
         transaction_type = txn.get(
             "transaction_type",
@@ -137,7 +131,6 @@ class PayShieldRiskEngine:
     # =========================================================
 
     def _get_user_profile(self, user_id):
-        """Retrieve historical user baseline."""
 
         global_avg = float(
             self.meta.get(
@@ -157,6 +150,7 @@ class PayShieldRiskEngine:
             global_std = 1000.0
 
         if self.profiles.empty:
+
             return (
                 global_avg,
                 global_std,
@@ -166,6 +160,7 @@ class PayShieldRiskEngine:
             )
 
         if "user_id" not in self.profiles.columns:
+
             return (
                 global_avg,
                 global_std,
@@ -179,6 +174,7 @@ class PayShieldRiskEngine:
         ]
 
         if user_row.empty:
+
             return (
                 global_avg,
                 global_std,
@@ -236,10 +232,6 @@ class PayShieldRiskEngine:
     # =========================================================
 
     def _build_ml_features(self, txn):
-        """
-        Build exactly the feature structure expected by
-        the saved XGBoost and Isolation Forest models.
-        """
 
         user_id = txn.get(
             "user_id",
@@ -289,9 +281,9 @@ class PayShieldRiskEngine:
             txn
         )
 
-        # -----------------------------------------------------
-        # Velocity
-        # -----------------------------------------------------
+        # =====================================================
+        # VELOCITY
+        # =====================================================
 
         velocity_1h = int(
             txn.get(
@@ -301,19 +293,22 @@ class PayShieldRiskEngine:
         )
 
         if velocity_1h > 0:
+
             seconds_since_prev = (
                 3600.0 / velocity_1h
             )
+
         else:
+
             seconds_since_prev = 86400.0
 
         velocity_10m = int(
             seconds_since_prev <= 600
         )
 
-        # -----------------------------------------------------
-        # Behavioral changes
-        # -----------------------------------------------------
+        # =====================================================
+        # BEHAVIORAL CHANGES
+        # =====================================================
 
         country_changed = int(
             country
@@ -325,9 +320,9 @@ class PayShieldRiskEngine:
             != str(common_device).lower()
         )
 
-        # -----------------------------------------------------
-        # Base numerical features
-        # -----------------------------------------------------
+        # =====================================================
+        # AMOUNT FEATURES
+        # =====================================================
 
         safe_amount = max(
             amount,
@@ -348,9 +343,9 @@ class PayShieldRiskEngine:
             / (user_std + 1e-5)
         )
 
-        # -----------------------------------------------------
-        # Feature dictionary
-        # -----------------------------------------------------
+        # =====================================================
+        # FEATURE ROW
+        # =====================================================
 
         row = {
 
@@ -360,9 +355,8 @@ class PayShieldRiskEngine:
 
             "user_std_amount": user_std,
 
-            "user_txn_count": float(
-                user_txn_count
-            ),
+            "user_txn_count":
+                float(user_txn_count),
 
             "log_amount": log_amount,
 
@@ -399,12 +393,12 @@ class PayShieldRiskEngine:
             "velocity_1h":
                 float(velocity_1h),
 
-            # Transaction type one-hot
+            # Transaction type
             "transaction_type_NETBANKING": 0.0,
             "transaction_type_UPI": 0.0,
             "transaction_type_WALLET": 0.0,
 
-            # Country one-hot
+            # Country
             "country_GB": 0.0,
             "country_IN": 0.0,
             "country_NG": 0.0,
@@ -412,15 +406,15 @@ class PayShieldRiskEngine:
             "country_SG": 0.0,
             "country_US": 0.0,
 
-            # Device one-hot
+            # Device
             "device_type_mobile": 0.0,
             "device_type_tablet": 0.0,
             "device_type_unknown": 0.0,
         }
 
-        # -----------------------------------------------------
-        # Transaction type encoding
-        # -----------------------------------------------------
+        # =====================================================
+        # TRANSACTION TYPE ENCODING
+        # =====================================================
 
         transaction_key = (
             f"transaction_type_{transaction_type}"
@@ -429,9 +423,9 @@ class PayShieldRiskEngine:
         if transaction_key in row:
             row[transaction_key] = 1.0
 
-        # -----------------------------------------------------
-        # Country encoding
-        # -----------------------------------------------------
+        # =====================================================
+        # COUNTRY ENCODING
+        # =====================================================
 
         country_key = (
             f"country_{country}"
@@ -440,9 +434,9 @@ class PayShieldRiskEngine:
         if country_key in row:
             row[country_key] = 1.0
 
-        # -----------------------------------------------------
-        # Device encoding
-        # -----------------------------------------------------
+        # =====================================================
+        # DEVICE ENCODING
+        # =====================================================
 
         device_key = (
             f"device_type_{device_type}"
@@ -451,9 +445,9 @@ class PayShieldRiskEngine:
         if device_key in row:
             row[device_key] = 1.0
 
-        # -----------------------------------------------------
+        # =====================================================
         # EXACT TRAINING COLUMN ORDER
-        # -----------------------------------------------------
+        # =====================================================
 
         feature_columns = self.meta.get(
             "feature_columns",
@@ -474,34 +468,52 @@ class PayShieldRiskEngine:
     # =========================================================
 
     def score_transaction(self, txn: dict):
-        """
-        Calculate combined PayShield risk score using:
-
-        1. Rule engine
-        2. Graph analysis
-        3. XGBoost supervised ML
-        4. Isolation Forest anomaly detection
-        5. Weighted ensemble
-        """
 
         user_id = txn.get(
             "user_id",
             "UNKNOWN",
         )
 
+        # -----------------------------------------------------
+        # DEVICE ID
+        # -----------------------------------------------------
+
         device_id = txn.get(
-            "device_id",
-            "UNKNOWN_DEV",
+            "device_id"
         )
+
+        # Attack generator sometimes only sends device_type.
+        # Use it as a stable graph identity if device_id is absent.
+
+        if not device_id:
+
+            device_id = (
+                txn.get(
+                    "device_type"
+                )
+                or "UNKNOWN_DEV"
+            )
+
+        # -----------------------------------------------------
+        # IP ADDRESS
+        # -----------------------------------------------------
 
         ip_address = txn.get(
             "ip_address",
             "127.0.0.1",
         )
 
+        # -----------------------------------------------------
+        # RECIPIENT
+        # -----------------------------------------------------
+
         recipient_id = txn.get(
             "recipient_id"
         )
+
+        # -----------------------------------------------------
+        # TRANSACTION ID
+        # -----------------------------------------------------
 
         transaction_id = txn.get(
             "txn_id",
@@ -531,39 +543,51 @@ class PayShieldRiskEngine:
 
         rule_txn = dict(txn)
 
-        # Existing RuleEngine expects seconds_since_prev.
+        # Attack generator directly sends seconds_since_prev.
+        # Preserve it if present.
 
-        if velocity_1h > 0:
+        if "seconds_since_prev" not in rule_txn:
 
-            rule_txn[
-                "seconds_since_prev"
-            ] = (
-                3600.0
-                / velocity_1h
-            )
+            if velocity_1h > 0:
 
-        else:
+                rule_txn[
+                    "seconds_since_prev"
+                ] = (
+                    3600.0
+                    / velocity_1h
+                )
 
-            rule_txn[
-                "seconds_since_prev"
-            ] = 86400.0
+            else:
 
-        user_avg, user_std, _, _, _ = (
-            self._get_user_profile(
-                user_id
-            )
+                rule_txn[
+                    "seconds_since_prev"
+                ] = 86400.0
+
+        (
+            user_avg,
+            user_std,
+            _,
+            _,
+            _,
+        ) = self._get_user_profile(
+            user_id
         )
 
         baseline = {
-            "user_avg_amount": user_avg,
-            "user_std_amount": user_std,
+
+            "user_avg_amount":
+                user_avg,
+
+            "user_std_amount":
+                user_std,
         }
 
-        rule_score, rule_reasons = (
-            self.rule_engine.evaluate(
-                rule_txn,
-                baseline,
-            )
+        (
+            rule_score,
+            rule_reasons,
+        ) = self.rule_engine.evaluate(
+            rule_txn,
+            baseline,
         )
 
         # =====================================================
@@ -571,20 +595,30 @@ class PayShieldRiskEngine:
         # =====================================================
 
         self.graph_analyzer.add_transaction(
+
             transaction_id,
+
             user_id,
+
             device_id,
+
             ip_address,
+
             recipient_id,
         )
 
-        graph_score, graph_reasons = (
-            self.graph_analyzer.analyze_risk(
-                user_id,
-                device_id,
-                ip_address,
-                recipient_id,
-            )
+        (
+            graph_score,
+            graph_reasons,
+        ) = self.graph_analyzer.analyze_risk(
+
+            user_id,
+
+            device_id,
+
+            ip_address,
+
+            recipient_id,
         )
 
         # =====================================================
@@ -592,14 +626,19 @@ class PayShieldRiskEngine:
         # =====================================================
 
         xgb_score = 0.05
+
         iso_score = 0.05
 
         if (
+
             self.xgb_model is not None
+
             and self.iso_model is not None
+
             and self.meta.get(
                 "feature_columns"
             )
+
         ):
 
             try:
@@ -610,29 +649,30 @@ class PayShieldRiskEngine:
                     )
                 )
 
-                # ---------------------------------------------
-                # XGBoost
-                # ---------------------------------------------
+                # XGBOOST
 
                 xgb_score = float(
+
                     self.xgb_model
                     .predict_proba(
                         features
                     )[0, 1]
+
                 )
 
-                # ---------------------------------------------
-                # Isolation Forest
-                # ---------------------------------------------
+                # ISOLATION FOREST
 
                 iso_raw = float(
+
                     -self.iso_model
                     .decision_function(
                         features
                     )[0]
+
                 )
 
                 iso_score = float(
+
                     1.0
                     / (
                         1.0
@@ -640,6 +680,7 @@ class PayShieldRiskEngine:
                             -iso_raw * 8
                         )
                     )
+
                 )
 
             except Exception as exc:
@@ -652,37 +693,38 @@ class PayShieldRiskEngine:
         # 4. WEIGHTED ENSEMBLE
         # =====================================================
 
-        """
-        XGBoost can be extremely confident for a cold-start
-        or unseen user because of the training distribution.
-
-        Therefore:
-
-        - High XGB alone is not enough.
-        - Rule / anomaly / graph evidence can corroborate it.
-        - Multiple critical signals force a high-risk floor.
-        """
-
         corroborating_signals = sum(
+
             [
+
                 iso_score > 0.70,
+
                 graph_score > 0.70,
+
                 rule_score > 0.70,
+
             ]
+
         )
 
         # -----------------------------------------------------
-        # Conservative treatment of unsupported ML suspicion
+        # Conservative ML treatment
         # -----------------------------------------------------
 
         if (
+
             xgb_score > 0.70
+
             and corroborating_signals == 0
+
         ):
 
             effective_xgb = min(
+
                 xgb_score,
+
                 0.30,
+
             )
 
         else:
@@ -690,7 +732,7 @@ class PayShieldRiskEngine:
             effective_xgb = xgb_score
 
         # -----------------------------------------------------
-        # Composite score
+        # COMPOSITE SCORE
         # -----------------------------------------------------
 
         composite_score = (
@@ -710,31 +752,79 @@ class PayShieldRiskEngine:
         # =====================================================
 
         critical_signals = sum(
+
             [
+
                 xgb_score > 0.70,
+
                 graph_score > 0.70,
+
                 rule_score > 0.70,
+
                 iso_score > 0.75,
+
             ]
+
         )
 
         if critical_signals >= 2:
 
             composite_score = max(
+
                 composite_score,
+
                 0.85,
+
             )
 
-        # -----------------------------------------------------
-        # Clamp score
-        # -----------------------------------------------------
+        # =====================================================
+        # SMURFING GRAPH TOPOLOGY OVERRIDE
+        # =====================================================
+
+        # Once the graph confirms multiple independent users
+        # sending funds to the same recipient, this is strong
+        # structural evidence of smurfing.
+
+        smurfing_detected = any(
+
+            reason.startswith(
+                "GRAPH_SMURFING_CONFIRMED"
+            )
+
+            or reason.startswith(
+                "GRAPH_SMURFING_HUB"
+            )
+
+            for reason in graph_reasons
+
+        )
+
+        if smurfing_detected:
+
+            composite_score = max(
+
+                composite_score,
+
+                0.80,
+
+            )
+
+        # =====================================================
+        # CLAMP SCORE
+        # =====================================================
 
         composite_score = float(
+
             np.clip(
+
                 composite_score,
+
                 0.0,
+
                 1.0,
+
             )
+
         )
 
         # =====================================================
@@ -744,21 +834,25 @@ class PayShieldRiskEngine:
         if composite_score >= 0.75:
 
             decision = "BLOCK"
+
             risk_level = "CRITICAL"
 
         elif composite_score >= 0.45:
 
             decision = "REVIEW"
+
             risk_level = "HIGH"
 
         elif composite_score >= 0.25:
 
             decision = "REVIEW"
+
             risk_level = "MEDIUM"
 
         else:
 
             decision = "APPROVE"
+
             risk_level = "LOW"
 
         # =====================================================
@@ -778,26 +872,32 @@ class PayShieldRiskEngine:
         if xgb_score > 0.65:
 
             reasons.append(
+
                 "ML_SUPERVISED: "
                 "High statistical similarity "
                 "to known fraud patterns "
                 f"({xgb_score * 100:.1f}%)"
+
             )
 
         if iso_score > 0.70:
 
             reasons.append(
+
                 "ML_ANOMALY: "
                 "Significant deviation "
                 "from normal baseline "
                 f"({iso_score * 100:.1f}%)"
+
             )
 
         if not reasons:
 
             reasons.append(
+
                 "Normal transactional behavior "
                 "matching historical baseline"
+
             )
 
         # =====================================================
@@ -846,8 +946,10 @@ class PayShieldRiskEngine:
                         rule_score,
                         4,
                     ),
+
             },
 
             "reasons":
                 reasons,
+
         }

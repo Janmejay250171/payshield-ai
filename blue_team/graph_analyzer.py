@@ -1,56 +1,315 @@
 import networkx as nx
 
+
 class GraphAnalyzer:
+
     def __init__(self):
         self.G = nx.Graph()
 
-    def add_transaction(self, txn_id: str, user_id: str, device_id: str, ip_address: str, recipient_id: str = None):
-        """
-        Builds multi-entity relationships in the NetworkX graph.
-        Entities: User, Device, IP, Recipient Node.
-        """
-        self.G.add_node(user_id, node_type="user")
-        self.G.add_node(device_id, node_type="device")
-        self.G.add_node(ip_address, node_type="ip")
+    # =========================================================
+    # ADD TRANSACTION TO GRAPH
+    # =========================================================
 
-        self.G.add_edge(user_id, device_id, relation="USES_DEVICE")
-        self.G.add_edge(user_id, ip_address, relation="USES_IP")
+    def add_transaction(
+        self,
+        txn_id: str,
+        user_id: str,
+        device_id: str,
+        ip_address: str,
+        recipient_id: str = None,
+    ):
+
+        # -----------------------------------------------------
+        # USER NODE
+        # -----------------------------------------------------
+
+        self.G.add_node(
+            user_id,
+            node_type="user",
+        )
+
+        # -----------------------------------------------------
+        # DEVICE NODE
+        # -----------------------------------------------------
+
+        if device_id:
+
+            self.G.add_node(
+                device_id,
+                node_type="device",
+            )
+
+            self.G.add_edge(
+                user_id,
+                device_id,
+                relation="USES_DEVICE",
+            )
+
+        # -----------------------------------------------------
+        # IP NODE
+        # -----------------------------------------------------
+
+        if ip_address:
+
+            self.G.add_node(
+                ip_address,
+                node_type="ip",
+            )
+
+            self.G.add_edge(
+                user_id,
+                ip_address,
+                relation="USES_IP",
+            )
+
+        # -----------------------------------------------------
+        # RECIPIENT NODE
+        # -----------------------------------------------------
 
         if recipient_id:
-            self.G.add_node(recipient_id, node_type="recipient")
-            self.G.add_edge(user_id, recipient_id, relation="TRANSFERS_TO", txn_id=txn_id)
 
-    def analyze_risk(self, user_id: str, device_id: str, ip_address: str, recipient_id: str = None) -> tuple[float, list[str]]:
-        """
-        Calculates graph centrality, degree anomalies, and shared entity rings.
-        Returns (graph_risk_score [0.0 - 1.0], explanation_reasons).
-        """
+            self.G.add_node(
+                recipient_id,
+                node_type="recipient",
+            )
+
+            self.G.add_edge(
+                user_id,
+                recipient_id,
+                relation="TRANSFERS_TO",
+                txn_id=txn_id,
+            )
+
+    # =========================================================
+    # ANALYZE GRAPH RISK
+    # =========================================================
+
+    def analyze_risk(
+        self,
+        user_id: str,
+        device_id: str,
+        ip_address: str,
+        recipient_id: str = None,
+    ) -> tuple[float, list[str]]:
+
         reasons = []
         score = 0.0
 
-        if not self.G.has_node(device_id) or not self.G.has_node(ip_address):
-            return 0.1, ["GRAPH: New entity node observed in network"]
+        # =====================================================
+        # 1. DEVICE SHARING / SYNTHETIC IDENTITY
+        # =====================================================
 
-        # 1. Device Sharing Ring Detection (Synthetic ID ring)
-        device_users = [n for n in self.G.neighbors(device_id) if self.G.nodes[n].get("node_type") == "user"]
-        if len(device_users) > 5:
-            score = max(score, 0.95)
-            reasons.append(f"GRAPH_SYNTHETIC_RING: Device '{device_id}' is shared across {len(device_users)} distinct user accounts")
-        elif len(device_users) > 2:
-            score = max(score, 0.65)
-            reasons.append(f"GRAPH_SHARED_DEVICE: Device shared by {len(device_users)} accounts")
+        if device_id and self.G.has_node(device_id):
 
-        # 2. IP Botnet Clustering
-        ip_users = [n for n in self.G.neighbors(ip_address) if self.G.nodes[n].get("node_type") == "user"]
-        if len(ip_users) > 10:
-            score = max(score, 0.90)
-            reasons.append(f"GRAPH_IP_BOTNET: IP '{ip_address}' concentrated across {len(ip_users)} accounts")
+            device_users = [
 
-        # 3. Smurfing / Central Fan-In Hub Detection
-        if recipient_id and self.G.has_node(recipient_id):
-            senders = [n for n in self.G.neighbors(recipient_id) if self.G.nodes[n].get("node_type") == "user"]
-            if len(senders) >= 5:
-                score = max(score, 0.85)
-                reasons.append(f"GRAPH_SMURFING_HUB: Recipient node '{recipient_id}' is receiving aggregated funds from {len(senders)} separate accounts")
+                node
+
+                for node in self.G.neighbors(device_id)
+
+                if self.G.nodes[node].get(
+                    "node_type"
+                ) == "user"
+
+            ]
+
+            user_count = len(
+                set(device_users)
+            )
+
+            # Extreme device-sharing ring
+
+            if user_count >= 6:
+
+                score = max(
+                    score,
+                    0.95,
+                )
+
+                reasons.append(
+
+                    "GRAPH_SYNTHETIC_RING: "
+
+                    f"Device '{device_id}' "
+
+                    f"is shared across "
+
+                    f"{user_count} distinct accounts"
+
+                )
+
+            # Suspicious device sharing
+
+            elif user_count >= 3:
+
+                score = max(
+                    score,
+                    0.65,
+                )
+
+                reasons.append(
+
+                    "GRAPH_SHARED_DEVICE: "
+
+                    f"Device '{device_id}' "
+
+                    f"is shared across "
+
+                    f"{user_count} accounts"
+
+                )
+
+        # =====================================================
+        # 2. IP BOTNET DETECTION
+        # =====================================================
+
+        if ip_address and self.G.has_node(ip_address):
+
+            ip_users = [
+
+                node
+
+                for node in self.G.neighbors(ip_address)
+
+                if self.G.nodes[node].get(
+                    "node_type"
+                ) == "user"
+
+            ]
+
+            user_count = len(
+                set(ip_users)
+            )
+
+            if user_count >= 10:
+
+                score = max(
+                    score,
+                    0.90,
+                )
+
+                reasons.append(
+
+                    "GRAPH_IP_BOTNET: "
+
+                    f"IP '{ip_address}' "
+
+                    f"is used by "
+
+                    f"{user_count} distinct accounts"
+
+                )
+
+        # =====================================================
+        # 3. SMURFING / MONEY MULE FAN-IN DETECTION
+        # =====================================================
+
+        if (
+            recipient_id
+            and self.G.has_node(
+                recipient_id
+            )
+        ):
+
+            senders = [
+
+                node
+
+                for node in self.G.neighbors(
+                    recipient_id
+                )
+
+                if self.G.nodes[node].get(
+                    "node_type"
+                ) == "user"
+
+            ]
+
+            sender_count = len(
+                set(senders)
+            )
+
+            # -------------------------------------------------
+            # CONFIRMED SMURFING PATTERN
+            # -------------------------------------------------
+
+            if sender_count >= 6:
+
+                score = max(
+                    score,
+                    0.95,
+                )
+
+                reasons.append(
+
+                    "GRAPH_SMURFING_CONFIRMED: "
+
+                    f"Recipient '{recipient_id}' "
+
+                    f"received funds from "
+
+                    f"{sender_count} distinct accounts"
+
+                )
+
+            # -------------------------------------------------
+            # STRONG SMURFING SIGNAL
+            # -------------------------------------------------
+
+            elif sender_count >= 5:
+
+                score = max(
+                    score,
+                    0.88,
+                )
+
+                reasons.append(
+
+                    "GRAPH_SMURFING_HUB: "
+
+                    f"Recipient '{recipient_id}' "
+
+                    f"is receiving funds from "
+
+                    f"{sender_count} separate accounts"
+
+                )
+
+            # -------------------------------------------------
+            # EARLY WARNING
+            # -------------------------------------------------
+
+            elif sender_count >= 3:
+
+                score = max(
+                    score,
+                    0.55,
+                )
+
+                reasons.append(
+
+                    "GRAPH_SUSPICIOUS_FAN_IN: "
+
+                    f"Recipient '{recipient_id}' "
+
+                    f"has {sender_count} distinct senders"
+
+                )
+
+        # =====================================================
+        # DEFAULT GRAPH SCORE
+        # =====================================================
+
+        if score == 0.0:
+
+            score = 0.05
 
         return score, reasons
+
+    # =========================================================
+    # OPTIONAL GRAPH RESET
+    # =========================================================
+
+    def reset(self):
+
+        self.G.clear()

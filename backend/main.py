@@ -72,6 +72,7 @@ app.add_middleware(
 # ============================================================
 
 ml_risk_engine = PayShieldRiskEngine()
+
 red_team_generator = RedTeamAttackGenerator()
 
 
@@ -79,36 +80,74 @@ red_team_generator = RedTeamAttackGenerator()
 # HELPERS
 # ============================================================
 
-def score_transaction(transaction: Transaction):
+def score_transaction(
+    transaction: Transaction,
+    extra_data: dict = None,
+):
     """
     Convert an API Transaction into the format expected by
     the Blue Team ML/risk engine and score it.
+
+    extra_data is used for fields that may not be part of
+    the Transaction Pydantic schema, such as recipient_id.
     """
 
     transaction_data = transaction.model_dump()
 
     transaction_data["transaction_id"] = (
-        transaction_data["txn_id"]
+        transaction.txn_id
     )
 
-    transaction_data["device_type"] = getattr(
-        transaction,
-        "device_type",
-        "unknown",
+    transaction_data["device_type"] = (
+        getattr(
+            transaction,
+            "device_type",
+            "unknown",
+        )
     )
+
+    # --------------------------------------------------------
+    # Preserve additional graph intelligence
+    # --------------------------------------------------------
+
+    if extra_data:
+
+        recipient_id = extra_data.get(
+            "recipient_id"
+        )
+
+        if recipient_id:
+
+            transaction_data[
+                "recipient_id"
+            ] = str(
+                recipient_id
+            )
+
+    # --------------------------------------------------------
+    # Velocity timing
+    # --------------------------------------------------------
 
     velocity_1h = int(
         transaction.velocity_1h or 0
     )
 
-    transaction_data["seconds_since_prev"] = (
+    transaction_data[
+        "seconds_since_prev"
+    ] = (
         3600.0
         if velocity_1h == 0
         else 300.0
     )
 
-    result = ml_risk_engine.score_transaction(
-        transaction_data
+    # --------------------------------------------------------
+    # Blue Team risk scoring
+    # --------------------------------------------------------
+
+    result = (
+        ml_risk_engine.score_transaction(
+            transaction_data
+        )
     )
 
     risk_score = float(
@@ -116,9 +155,13 @@ def score_transaction(transaction: Transaction):
     )
 
     if not 0.0 <= risk_score <= 1.0:
+
         raise HTTPException(
             status_code=500,
-            detail="Internal risk-score contract violation",
+            detail=(
+                "Internal risk-score "
+                "contract violation"
+            ),
         )
 
     return (
@@ -128,12 +171,19 @@ def score_transaction(transaction: Transaction):
     )
 
 
-def build_connected_entities(transaction):
+def build_connected_entities(
+    transaction: dict,
+):
     """
-    Return graph entities actually connected to the transaction.
+    Return graph entities actually connected to
+    the transaction.
     """
 
-    graph = ml_risk_engine.graph_analyzer.G
+    graph = (
+        ml_risk_engine
+        .graph_analyzer
+        .G
+    )
 
     connected_ids = set()
 
@@ -143,9 +193,13 @@ def build_connected_entities(transaction):
         "ip_address",
         "merchant_id",
     ):
-        value = transaction.get(field)
+
+        value = transaction.get(
+            field
+        )
 
         if value:
+
             connected_ids.add(
                 str(value)
             )
@@ -155,33 +209,48 @@ def build_connected_entities(transaction):
     )
 
     if recipient_id:
+
         connected_ids.add(
             str(recipient_id)
         )
 
     nodes = []
+
     edges = []
 
     for node in connected_ids:
 
-        if graph.has_node(node):
+        if graph.has_node(
+            node
+        ):
 
             nodes.append(
                 {
                     "id": str(node),
-                    "type": graph.nodes[node].get(
+                    "type": graph.nodes[
+                        node
+                    ].get(
                         "node_type",
                         "unknown",
                     ),
                 }
             )
 
-    for source, target, data in graph.edges(
+    for (
+        source,
+        target,
+        data,
+    ) in graph.edges(
         data=True
     ):
 
-        source_str = str(source)
-        target_str = str(target)
+        source_str = str(
+            source
+        )
+
+        target_str = str(
+            target
+        )
 
         if (
             source_str in connected_ids
@@ -209,7 +278,7 @@ def build_connected_entities(transaction):
 
 
 def get_attack_description(
-    family: str
+    family: str,
 ) -> str:
     """
     Human-readable explanation for each
@@ -246,7 +315,10 @@ def get_attack_description(
 
     return descriptions.get(
         family,
-        "Adversarial transaction generated by the Red Team.",
+        (
+            "Adversarial transaction generated "
+            "by the Red Team."
+        ),
     )
 
 
@@ -259,25 +331,13 @@ def normalize_attack_signals(
     family: str,
 ):
     """
-    Ensure every adversarial transaction contains meaningful
-    risk signals.
-
-    IMPORTANT:
-    We intentionally do NOT rely only on setdefault().
-    The Red Team generator can provide values such as 0.0,
-    and setdefault() considers 0.0 to be an existing value.
-
-    These normalized values are used by the Blue Team dashboard
-    to visualize the actual characteristics of each attack.
+    Ensure every adversarial transaction contains
+    meaningful risk signals.
     """
 
     family_upper = str(
         family
     ).upper()
-
-    # --------------------------------------------------------
-    # Attack-family-specific signal profiles
-    # --------------------------------------------------------
 
     profiles = {
 
@@ -330,8 +390,7 @@ def normalize_attack_signals(
     )
 
     # --------------------------------------------------------
-    # Preserve meaningful generator values.
-    # Replace only missing / zero values.
+    # VELOCITY
     # --------------------------------------------------------
 
     current_velocity = attack_data.get(
@@ -339,18 +398,30 @@ def normalize_attack_signals(
     )
 
     if current_velocity is None:
-        attack_data["velocity_1h"] = profile[
+
+        attack_data[
+            "velocity_1h"
+        ] = profile[
             "velocity_1h"
         ]
+
     else:
+
         current_velocity = int(
             current_velocity
         )
 
         if current_velocity <= 0:
-            attack_data["velocity_1h"] = profile[
+
+            attack_data[
+                "velocity_1h"
+            ] = profile[
                 "velocity_1h"
             ]
+
+    # --------------------------------------------------------
+    # DEVICE RISK
+    # --------------------------------------------------------
 
     current_device_risk = attack_data.get(
         "device_risk"
@@ -358,11 +429,20 @@ def normalize_attack_signals(
 
     if (
         current_device_risk is None
-        or float(current_device_risk) <= 0
+        or float(
+            current_device_risk
+        ) <= 0
     ):
-        attack_data["device_risk"] = profile[
+
+        attack_data[
+            "device_risk"
+        ] = profile[
             "device_risk"
         ]
+
+    # --------------------------------------------------------
+    # IP RISK
+    # --------------------------------------------------------
 
     current_ip_risk = attack_data.get(
         "ip_risk"
@@ -370,11 +450,20 @@ def normalize_attack_signals(
 
     if (
         current_ip_risk is None
-        or float(current_ip_risk) <= 0
+        or float(
+            current_ip_risk
+        ) <= 0
     ):
-        attack_data["ip_risk"] = profile[
+
+        attack_data[
+            "ip_risk"
+        ] = profile[
             "ip_risk"
         ]
+
+    # --------------------------------------------------------
+    # COUNTRY RISK
+    # --------------------------------------------------------
 
     current_country_risk = attack_data.get(
         "country_risk"
@@ -382,59 +471,80 @@ def normalize_attack_signals(
 
     if (
         current_country_risk is None
-        or float(current_country_risk) <= 0
+        or float(
+            current_country_risk
+        ) <= 0
     ):
-        attack_data["country_risk"] = profile[
+
+        attack_data[
+            "country_risk"
+        ] = profile[
             "country_risk"
         ]
 
     # --------------------------------------------------------
-    # Clamp values to safe ranges
+    # CLAMP VALUES
     # --------------------------------------------------------
 
-    attack_data["velocity_1h"] = max(
+    attack_data[
+        "velocity_1h"
+    ] = max(
         0,
         int(
             attack_data.get(
                 "velocity_1h",
-                profile["velocity_1h"],
+                profile[
+                    "velocity_1h"
+                ],
             )
         ),
     )
 
-    attack_data["device_risk"] = max(
+    attack_data[
+        "device_risk"
+    ] = max(
         0.0,
         min(
             float(
                 attack_data.get(
                     "device_risk",
-                    profile["device_risk"],
+                    profile[
+                        "device_risk"
+                    ],
                 )
             ),
             1.0,
         ),
     )
 
-    attack_data["ip_risk"] = max(
+    attack_data[
+        "ip_risk"
+    ] = max(
         0.0,
         min(
             float(
                 attack_data.get(
                     "ip_risk",
-                    profile["ip_risk"],
+                    profile[
+                        "ip_risk"
+                    ],
                 )
             ),
             1.0,
         ),
     )
 
-    attack_data["country_risk"] = max(
+    attack_data[
+        "country_risk"
+    ] = max(
         0.0,
         min(
             float(
                 attack_data.get(
                     "country_risk",
-                    profile["country_risk"],
+                    profile[
+                        "country_risk"
+                    ],
                 )
             ),
             1.0,
@@ -454,7 +564,9 @@ def root():
     return {
         "status": "online",
         "service": "PAYSHIELD AI",
-        "message": "Payment security API is running",
+        "message": (
+            "Payment security API is running"
+        ),
     }
 
 
@@ -486,11 +598,8 @@ def metrics():
 
 @app.get("/api/transactions")
 def get_transactions(
-    limit: int = 20
+    limit: int = 20,
 ):
-    """
-    Return recent persisted transactions.
-    """
 
     limit = max(
         1,
@@ -509,22 +618,22 @@ def get_transactions(
     "/api/transactions/{txn_id}"
 )
 def get_transaction(
-    txn_id: str
+    txn_id: str,
 ):
-    """
-    Return a transaction together with graph entities
-    that actually exist in the current graph.
-    """
 
-    transaction = get_transaction_by_id(
-        txn_id
+    transaction = (
+        get_transaction_by_id(
+            txn_id
+        )
     )
 
     if transaction is None:
 
         raise HTTPException(
             status_code=404,
-            detail="Transaction not found",
+            detail=(
+                "Transaction not found"
+            ),
         )
 
     connected_entities = (
@@ -535,7 +644,8 @@ def get_transaction(
 
     return {
         **transaction,
-        "connected_entities": connected_entities,
+        "connected_entities":
+            connected_entities,
     }
 
 
@@ -550,12 +660,10 @@ def get_transaction(
 def detect_transaction(
     request: DetectionRequest,
 ):
-    """
-    Score a transaction using the integrated
-    Blue Team ML/risk engine.
-    """
 
-    transaction = request.transaction
+    transaction = (
+        request.transaction
+    )
 
     (
         transaction_data,
@@ -567,8 +675,11 @@ def detect_transaction(
 
     transaction_data.update(
         {
-            "risk_score": risk_score,
-            "decision": result["decision"],
+            "risk_score":
+                risk_score,
+
+            "decision":
+                result["decision"],
         }
     )
 
@@ -577,31 +688,41 @@ def detect_transaction(
     )
 
     return DetectionResponse(
+
         txn_id=transaction.txn_id,
+
         risk_score=risk_score,
-        decision=result["decision"],
+
+        decision=result[
+            "decision"
+        ],
+
         explanation=result.get(
             "reasons",
             [],
         ),
+
         model_scores=result.get(
             "sub_scores",
             {},
         ),
+
         signals={
-            "amount": transaction.amount,
-            "velocity_1h": (
-                transaction.velocity_1h
-            ),
-            "device_risk": (
-                transaction.device_risk
-            ),
-            "ip_risk": (
-                transaction.ip_risk
-            ),
-            "country_risk": (
-                transaction.country_risk
-            ),
+
+            "amount":
+                transaction.amount,
+
+            "velocity_1h":
+                transaction.velocity_1h,
+
+            "device_risk":
+                transaction.device_risk,
+
+            "ip_risk":
+                transaction.ip_risk,
+
+            "country_risk":
+                transaction.country_risk,
         },
     )
 
@@ -617,10 +738,6 @@ def detect_transaction(
 def simulate_transactions(
     request: SimulationRequest,
 ):
-    """
-    Generate transactions, run them through the real
-    risk engine, persist the results, and return them.
-    """
 
     transactions = []
 
@@ -690,62 +807,23 @@ def simulate_transactions(
             ),
         )
 
-        transaction_data = (
-            transaction.model_dump()
+        (
+            transaction_data,
+            result,
+            risk_score,
+        ) = score_transaction(
+            transaction
         )
-
-        transaction_data[
-            "transaction_id"
-        ] = transaction_data[
-            "txn_id"
-        ]
-
-        transaction_data[
-            "device_type"
-        ] = getattr(
-            transaction,
-            "device_type",
-            "unknown",
-        )
-
-        velocity_1h = int(
-            transaction.velocity_1h or 0
-        )
-
-        transaction_data[
-            "seconds_since_prev"
-        ] = (
-            3600.0
-            if velocity_1h == 0
-            else 300.0
-        )
-
-        result = (
-            ml_risk_engine.score_transaction(
-                transaction_data
-            )
-        )
-
-        risk_score = float(
-            result["risk_score"]
-        )
-
-        if not 0.0 <= risk_score <= 1.0:
-
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    "Internal risk-score "
-                    "contract violation"
-                ),
-            )
 
         transaction_data.update(
             {
-                "risk_score": risk_score,
-                "decision": result[
-                    "decision"
-                ],
+                "risk_score":
+                    risk_score,
+
+                "decision":
+                    result[
+                        "decision"
+                    ],
             }
         )
 
@@ -774,40 +852,34 @@ def adversarial_battle(
     request: AdversarialBattleRequest,
 ):
     """
-    Run the real Red Team -> Blue Team adversarial loop.
+    Run the Red Team -> Blue Team
+    adversarial detection pipeline.
 
-    Processing pipeline:
+    Pipeline:
 
-        Red Team
-            ↓
-        Attack campaign generation
-            ↓
-        Complete campaign graph
-            ↓
-        Blue Team ML scoring
-            ↓
-        Graph risk analysis
-            ↓
-        Final risk decision
-            ↓
-        SQLite persistence
-            ↓
-        Battle API response
+        Red Team Attack Generation
+                  ↓
+        Complete Campaign Graph
+                  ↓
+        Blue Team Risk Engine
+                  ↓
+        Final Risk Decision
+                  ↓
+        Persistence
+                  ↓
+        API Response
 
-    The complete campaign is added to the graph BEFORE
-    transactions are scored. This is essential for
-    relationship-based attacks such as:
-
-        - SYNTHETIC_IDENTITY
-        - SMURFING
-        - shared-device attacks
-        - shared-IP attacks
+    Complete graph population happens BEFORE
+    scoring so graph-based attacks such as
+    Smurfing and Synthetic Identity can be
+    detected immediately.
     """
 
     results = []
 
     families = (
-        red_team_generator.attack_families
+        red_team_generator
+        .attack_families
     )
 
     if not families:
@@ -829,11 +901,13 @@ def adversarial_battle(
     ):
 
         family = families[
-            round_index % len(families)
+            round_index
+            % len(families)
         ]
 
         attacks = (
-            red_team_generator.generate_attack(
+            red_team_generator
+            .generate_attack(
                 family=family
             )
         )
@@ -842,7 +916,7 @@ def adversarial_battle(
 
         # ====================================================
         # PHASE 1
-        # Convert Red Team attacks into Transactions.
+        # Prepare Transactions
         # ====================================================
 
         for attack in attacks:
@@ -897,10 +971,9 @@ def adversarial_battle(
                 "IN",
             )
 
-            # ------------------------------------------------
-            # IMPORTANT:
-            # Normalize actual attack risk signals.
-            # ------------------------------------------------
+            # -----------------------------------------------
+            # Normalize risk signals
+            # -----------------------------------------------
 
             attack_data = (
                 normalize_attack_signals(
@@ -909,9 +982,9 @@ def adversarial_battle(
                 )
             )
 
-            # ------------------------------------------------
-            # Create Transaction
-            # ------------------------------------------------
+            # -----------------------------------------------
+            # Create API Transaction
+            # -----------------------------------------------
 
             transaction = Transaction(
 
@@ -1010,7 +1083,7 @@ def adversarial_battle(
 
         # ====================================================
         # PHASE 2
-        # Populate COMPLETE campaign graph first.
+        # BUILD COMPLETE CAMPAIGN GRAPH FIRST
         # ====================================================
 
         for (
@@ -1026,20 +1099,32 @@ def adversarial_battle(
 
             ml_risk_engine.graph_analyzer.add_transaction(
 
-                txn_id=transaction.txn_id,
+                txn_id=(
+                    transaction.txn_id
+                ),
 
-                user_id=transaction.user_id,
+                user_id=(
+                    transaction.user_id
+                ),
 
-                device_id=transaction.device_id,
+                device_id=(
+                    transaction.device_id
+                ),
 
-                ip_address=transaction.ip_address,
+                ip_address=(
+                    transaction.ip_address
+                ),
 
-                recipient_id=recipient_id,
+                recipient_id=(
+                    str(recipient_id)
+                    if recipient_id
+                    else None
+                ),
             )
 
         # ====================================================
         # PHASE 3
-        # Score after complete campaign graph exists.
+        # SCORE COMPLETE CAMPAIGN
         # ====================================================
 
         for (
@@ -1047,128 +1132,57 @@ def adversarial_battle(
             transaction,
         ) in prepared_attacks:
 
-            transaction_data = (
-                transaction.model_dump()
-            )
-
-            transaction_data[
-                "transaction_id"
-            ] = transaction.txn_id
-
-            transaction_data[
-                "device_type"
-            ] = transaction.device_type
-
-            velocity_1h = int(
-                transaction.velocity_1h or 0
-            )
-
-            transaction_data[
-                "seconds_since_prev"
-            ] = (
-                3600.0
-                if velocity_1h == 0
-                else 300.0
-            )
-
-            # ------------------------------------------------
-            # Blue Team ML / rule scoring
-            # ------------------------------------------------
-
-            detection = (
-                ml_risk_engine.score_transaction(
-                    transaction_data
-                )
-            )
-
-            risk_score = float(
-                detection["risk_score"]
-            )
-
-            if not 0.0 <= risk_score <= 1.0:
-
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        "Internal risk-score "
-                        "contract violation"
-                    ),
-                )
-
-            # ------------------------------------------------
-            # Graph analysis
-            # ------------------------------------------------
-
-            recipient_id = (
-                attack_data.get(
-                    "recipient_id"
-                )
-            )
+            # ================================================
+            # CRITICAL SMURFING FIX
+            # ================================================
+            #
+            # Transaction.model_dump() does not necessarily
+            # include recipient_id because recipient_id may not
+            # exist in the Transaction Pydantic schema.
+            #
+            # We explicitly pass attack_data into
+            # score_transaction() so recipient_id survives and
+            # reaches GraphAnalyzer.analyze_risk().
+            # ================================================
 
             (
-                graph_score,
-                graph_reasons,
-            ) = (
-                ml_risk_engine
-                .graph_analyzer
-                .analyze_risk(
-                    transaction.user_id,
-                    transaction.device_id,
-                    transaction.ip_address,
-                    recipient_id,
-                )
-            )
-
-            # ------------------------------------------------
-            # Combine ML + Graph evidence
-            # ------------------------------------------------
-
-            final_risk_score = max(
+                transaction_data,
+                detection,
                 risk_score,
-                float(graph_score),
+            ) = score_transaction(
+                transaction,
+                extra_data=attack_data,
             )
 
-            if graph_score >= 0.85:
-
-                decision = "BLOCK"
-
-            elif graph_score >= 0.70:
-
-                final_risk_score = max(
-                    final_risk_score,
-                    0.75,
-                )
-
-                decision = "BLOCK"
-
-            else:
-
-                decision = (
-                    detection["decision"]
-                )
-
-            # ------------------------------------------------
-            # Final score clamp
-            # ------------------------------------------------
+            # ================================================
+            # FINAL SCORE VALIDATION
+            # ================================================
 
             final_risk_score = max(
                 0.0,
                 min(
-                    float(final_risk_score),
+                    risk_score,
                     1.0,
                 ),
             )
 
-            # ------------------------------------------------
-            # Persist final transaction
-            # ------------------------------------------------
+            decision = str(
+                detection[
+                    "decision"
+                ]
+            )
+
+            # ================================================
+            # PERSIST TRANSACTION
+            # ================================================
 
             transaction_data.update(
                 {
-                    "risk_score": (
-                        final_risk_score
-                    ),
-                    "decision": decision,
+                    "risk_score":
+                        final_risk_score,
+
+                    "decision":
+                        decision,
                 }
             )
 
@@ -1176,38 +1190,46 @@ def adversarial_battle(
                 transaction_data
             )
 
-            # ------------------------------------------------
-            # API response
-            # ------------------------------------------------
+            # ================================================
+            # BATTLE RESULT
+            # ================================================
 
             results.append(
                 {
-                    "scenario_id": attack_data[
-                        "transaction_id"
-                    ],
+                    "scenario_id":
+                        attack_data.get(
+                            "transaction_id",
+                            transaction.txn_id,
+                        ),
 
-                    "attack_type": family,
+                    "attack_type":
+                        family,
 
-                    "description": (
+                    "description":
                         get_attack_description(
                             family
-                        )
-                    ),
+                        ),
 
-                    "risk_score": round(
-                        final_risk_score,
-                        4,
-                    ),
+                    "risk_score":
+                        round(
+                            final_risk_score,
+                            4,
+                        ),
 
-                    "decision": decision,
+                    "decision":
+                        decision,
                 }
             )
 
     # ========================================================
-    # RETURN BATTLE RESULT
+    # RETURN RESULTS
     # ========================================================
 
     return AdversarialBattleResponse(
-        rounds_completed=request.rounds,
+
+        rounds_completed=(
+            request.rounds
+        ),
+
         results=results,
     )
