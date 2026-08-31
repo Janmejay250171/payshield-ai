@@ -81,31 +81,3 @@ class PaymentSimulator:
         if self.metrics["red_attacks_generated"] > 0:
             catch_rate = self.metrics["red_attacks_blocked"] / self.metrics["red_attacks_generated"]
             self.metrics["resilience_score"] = round(catch_rate * 100.0, 2)
-
-    def get_live_threat_load(self) -> int:
-        import math
-        t = time.time()
-        # Realistic traffic spikes and dips using sine wave and random noise
-        base = 120 + math.sin(t / 4.0) * 60 + random.uniform(-15, 15)
-        
-        # If an attack is active, spike the load significantly
-        if self.metrics.get("last_attack_time") and (time.time() - self.metrics["last_attack_time"] < 25):
-            base += 250 + random.uniform(-20, 40)
-            
-        return int(max(0, base))
-
-    def get_live_mitigation_rate(self) -> float:
-        if self.metrics["red_attacks_generated"] == 0:
-            return 0.96
-            
-        real_rate = self.metrics["red_attacks_blocked"] / self.metrics["red_attacks_generated"]
-        
-        # Temporary drop in mitigation rate if Adaptive Attack is triggered
-        if self.metrics.get("last_attack_family") == "ADAPTIVE_MUTATION":
-            elapsed = time.time() - self.metrics["last_attack_time"]
-            if elapsed < 25:
-                # Drop mitigation rate by up to 45% to let red line cross blue line
-                drop_factor = max(0, 0.45 * (1 - (elapsed / 25)))
-                real_rate = max(0.1, real_rate - drop_factor)
-                
-        return real_rate

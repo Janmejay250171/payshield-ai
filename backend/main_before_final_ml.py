@@ -1,17 +1,7 @@
-import os
-import sys
 import random
-from typing import Dict, Any, Optional
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-
-ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
 
 from backend.database import (
     get_recent_transactions,
@@ -20,6 +10,7 @@ from backend.database import (
     init_database,
     save_transaction,
 )
+from backend.risk_engine import calculate_risk
 from blue_team.risk_engine import PayShieldRiskEngine
 from backend.schemas import (
     AdversarialBattleRequest,
@@ -31,12 +22,13 @@ from backend.schemas import (
     Transaction,
 )
 from backend.llm_service import llm_service
-from simulator.engine import PaymentSimulator
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_database()
     yield
+
 
 app = FastAPI(
     title="PAYSHIELD AI",
@@ -45,24 +37,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-risk_engine = PayShieldRiskEngine(models_dir=os.path.join(ROOT_DIR, "models_saved"))
-simulator = PaymentSimulator()
-
-# In-memory store for Transaction Investigation details
-transaction_store: Dict[str, Any] = {}
-
-class SimulateRequest(BaseModel):
-    count: int = Field(default=50, example=50)
-    attack_ratio: float = Field(default=0.3, example=0.3)
-
+ml_risk_engine = PayShieldRiskEngine()
 @app.get("/")
 def root():
     return {
@@ -71,38 +46,51 @@ def root():
         "message": "Payment security API is running",
     }
 
+
 @app.get("/health")
 def health():
     return {
         "status": "healthy"
     }
 
+
 @app.post("/api/detect", response_model=DetectionResponse)
 def detect_transaction(request: DetectionRequest):
     transaction = request.transaction
+
+    # Convert API transaction into the format expected
+    # by the Blue Team ML risk engine.
     transaction_data = transaction.model_dump()
+
     transaction_data["transaction_id"] = transaction_data["txn_id"]
-    transaction_data["device_type"] = transaction.device_type
+
+    # The current API has device_id, while the ML model
+    # expects a device_type category.
+    transaction_data["device_type"] = "unknown"
+
+    # Person 2's ML engine uses seconds_since_prev.
+    # velocity_1h is retained as an API signal.
     transaction_data["seconds_since_prev"] = (
         3600 if transaction.velocity_1h == 0 else 300
     )
 
-    result = risk_engine.score_transaction(transaction_data)
+    result = ml_risk_engine.score_transaction(transaction_data)
 
-    transaction_data.update({
-        "risk_score": result["risk_score"],
-        "decision": result["decision"],
-    })
+    transaction_data.update(
+        {
+            "risk_score": result["risk_score"],
+            "decision": result["decision"],
+        }
+    )
 
     save_transaction(transaction_data)
-    transaction_store[transaction.txn_id] = result
 
     return DetectionResponse(
         txn_id=transaction.txn_id,
         risk_score=result["risk_score"],
         decision=result["decision"],
-        explanation=result.get("reasons", []),
-        model_scores=result.get("sub_scores", {}),
+        explanation=result["reasons"],
+        model_scores=result["sub_scores"],
         signals={
             "amount": transaction.amount,
             "velocity_1h": transaction.velocity_1h,
@@ -114,9 +102,7 @@ def detect_transaction(request: DetectionRequest):
 
 @app.get("/api/metrics")
 def metrics():
-    db_metrics = get_transaction_metrics()
-    sim_metrics = simulator.get_telemetry()
-    return {**db_metrics, **sim_metrics}
+    return get_transaction_metrics()
 
 @app.get("/api/transactions")
 def get_transactions(limit: int = 20):
@@ -125,17 +111,19 @@ def get_transactions(limit: int = 20):
 
 @app.get("/api/transactions/{txn_id}")
 def get_transaction(txn_id: str):
-    if txn_id in transaction_store:
-        return transaction_store[txn_id]
-        
     transaction = get_transaction_by_id(txn_id)
-    if transaction is None:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    return transaction
 
+    if transaction is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Transaction not found",
+        )
+
+    return transaction
 @app.post("/api/simulate", response_model=SimulationResponse)
 def simulate_transactions(request: SimulationRequest):
     transactions = []
+
     for index in range(request.count):
         transaction = Transaction(
             txn_id=f"SIM-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}-{index}",
@@ -153,22 +141,25 @@ def simulate_transactions(request: SimulationRequest):
             country_risk=round(random.random(), 2),
         )
 
-        transaction_data = transaction.model_dump()
-        transaction_data["transaction_id"] = transaction_data["txn_id"]
+        result = calculate_risk(transaction)
 
-        result = risk_engine.score_transaction(transaction_data)
-        transaction_data.update({
-            "risk_score": result["risk_score"],
-            "decision": result["decision"],
-        })
+        transaction_data = transaction.model_dump()
+        transaction_data.update(
+            {
+                "risk_score": result["risk_score"],
+                "decision": result["decision"],
+            }
+        )
 
         save_transaction(transaction_data)
-        transaction_store[transaction.txn_id] = result
+
         transactions.append(transaction)
 
     return SimulationResponse(transactions=transactions)
-
-@app.post("/api/adversarial-battle", response_model=AdversarialBattleResponse)
+@app.post(
+    "/api/adversarial-battle",
+    response_model=AdversarialBattleResponse,
+)
 def adversarial_battle(request: AdversarialBattleRequest):
     transaction = Transaction(
         txn_id="BATTLE-BASE-001",
@@ -192,6 +183,7 @@ def adversarial_battle(request: AdversarialBattleRequest):
     )
 
     results = []
+
     for scenario in scenarios:
         modified_transaction = transaction.model_copy(
             update={
@@ -200,39 +192,19 @@ def adversarial_battle(request: AdversarialBattleRequest):
             }
         )
 
-        transaction_data = modified_transaction.model_dump()
-        transaction_data["transaction_id"] = transaction_data["txn_id"]
+        detection = calculate_risk(modified_transaction)
 
-        detection = risk_engine.score_transaction(transaction_data)
-
-        results.append({
-            "scenario_id": scenario["scenario_id"],
-            "attack_type": scenario["type"],
-            "description": scenario["description"],
-            "risk_score": detection["risk_score"],
-            "decision": detection["decision"],
-        })
+        results.append(
+            {
+                "scenario_id": scenario["scenario_id"],
+                "attack_type": scenario["type"],
+                "description": scenario["description"],
+                "risk_score": detection["risk_score"],
+                "decision": detection["decision"],
+            }
+        )
 
     return AdversarialBattleResponse(
         rounds_completed=len(results),
         results=results,
     )
-
-@app.get("/api/adversarial-battle-stats")
-def get_adversarial_battle_stats():
-    telemetry = simulator.get_telemetry()
-    attacks_gen = telemetry.get("red_attacks_generated", 0)
-    attacks_blk = telemetry.get("red_attacks_blocked", 0)
-
-    red_success_rate = round((attacks_gen - attacks_blk) / max(attacks_gen, 1), 4)
-    blue_catch_rate = round(attacks_blk / max(attacks_gen, 1), 4)
-
-    return {
-        "red_attacks_generated": attacks_gen,
-        "red_success_rate": red_success_rate,
-        "blue_catch_rate": blue_catch_rate,
-    }
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8001)
